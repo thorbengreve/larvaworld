@@ -1,3 +1,5 @@
+from typing import List, Tuple
+
 full_traj = {'trajectories': True,
              'trail_decay_in_sec': 0}
 
@@ -34,32 +36,55 @@ default_sim = {
     # 'dt': 1 / 16,
     # 'dt': 1 / 200,
     'sim_time_in_min': 3.0,
-    'odor_prep_time_in_min': 0.0,
-    'fly_prep_time_in_min': 0.5,
-    'collect_midline': False,
-    'collect_contour': False,
-    'collect_effectors': [],
-    'step_pars': [''],
-    'end_pars': ['length', 'cum_dur', 'num_ticks'],
-    # 'traj_mode': full_traj,
-    # 'draw_mode': draw_default,
+    'Box2D': False,
 }
 
+odor_pars = {'odor_id': str,
+             'odor_intensity': float,
+             'odor_spread': float}
+
+base_food_pars = {
+    'radius': float,
+    'amount': float,
+    'quality': float,
+    **odor_pars
+}
 
 food_pars = {
     'unique_id': str,
-    'pos': tuple,
-    'radius': float,
-    'amount': float,
-    'odor_id': str,
-    'odor_intensity': float,
-    'odor_spread': float
-}
-larva_pars = {
-    'unique_id': str,
+    'pos': Tuple[float, float],
+    **base_food_pars
 }
 
-agent_pars = {'Food' : food_pars,
-              'LarvaSim' : larva_pars,
-              'LarvaReplay' : larva_pars
+odor_gain_pars = {
+    'unique_id': str,
+    'mean': float,
+    'std': float
+}
+
+
+
+larva_pars = {
+    'unique_id': str,
+    **odor_pars
+}
+border_pars = {
+    'unique_id': str,
+    'width': float,
+    'points': List[Tuple[float, float]]
+}
+
+agent_pars = {'Food': food_pars,
+              'LarvaSim': larva_pars,
+              'LarvaReplay': larva_pars,
+              'Border': border_pars,
               }
+
+food_distro_pars = {
+    'N': int,
+    'mode': str,
+    'loc': Tuple[float, float],
+    'scale': float,
+    'pars': base_food_pars,
+    # 'orientation': float,
+}

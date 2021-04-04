@@ -1,26 +1,23 @@
 import math
-import time
 
-import numpy
 import numpy as np
-import scipy
 from mesa.space import ContinuousSpace
-from scipy.stats import multivariate_normal
 
 
 class ValueGrid:
-    def __init__(self, space_range, grid_resolution=[100, 100], distribution='uniform', initial_amount=1, quality=1):
-        self.initial_amount = initial_amount
+    def __init__(self, space_range, food_grid_dims=[100, 100], distribution='uniform',
+                 food_grid_amount=1, quality=1):
+        self.initial_amount = food_grid_amount
         self.quality = quality
-        if initial_amount>0 :
+        if food_grid_amount>0 :
             self.initial_value=1
         else :
             self.initial_value=0
-        # print(grid_resolution)
-        # print(grid_resolution[0])
-        # print(type(grid_resolution[0]))
+        # print(food_grid_dims)
+        # print(food_grid_dims[0])
+        # print(type(food_grid_dims[0]))
         # raise
-        self.X, self.Y = grid_resolution
+        self.X, self.Y = food_grid_dims
         x_range = tuple(space_range[0:2])
         y_range = tuple(space_range[2:])
         x0, x1 = x_range[0], x_range[1]
@@ -100,7 +97,7 @@ class ValueGrid:
 
 
 class ValueLayer:
-    def __init__(self, world, unique_id, sources, color, **kwargs):
+    def __init__(self, world, unique_id,  color,sources=[], **kwargs):
         self.world = world
         self.id = unique_id
         self.color = color
@@ -126,27 +123,16 @@ class GaussianValueLayer(ValueLayer):
     def __init__(self, world, **kwargs):
         super().__init__(world, **kwargs)
 
-        # self.dist = multivariate_normal([0, 0], [[0.2, 0], [0, 0.2]])
-
     def update_values(self):
         pass
 
     def get_value(self, pos):
         value = 0
         for s in self.sources:
-            source_pos = s.get_position()
-            # print(source_pos)
-            # spread = s.get_odor_spread()
-            # intensity = s.get_odor_intensity()
-            rel_pos = [pos[0] - source_pos[0], pos[1] - source_pos[1]]
-            # dist = multivariate_normal([0, 0], [[spread, 0], [0, spread]])
-            # v = dist.pdf(rel_pos) * intensity / dist.pdf([0, 0])
+            p = s.get_position()
+            rel_pos = [pos[0] - p[0], pos[1] - p[1]]
             value += s.get_gaussian_odor_value(rel_pos)
-        # print(value)
         return value
-
-    # def model(pos, width, height):
-    #     return  (height / scipy.stats.norm.pdf(pos,pos,width)) * scipy.stats.norm.pdf(x, pos, width)
 
 
 class DiffusionValueLayer(ValueLayer):
@@ -339,16 +325,3 @@ class LimitedSpace(ContinuousSpace):
         super().__init__(**kwargs)
 
 
-def agents_spatial_query(pos, radius, agent_list):
-    if len(agent_list) == 0:
-        return []
-    # s = time.time()
-    agent_positions = np.array([agent.get_position() for agent in agent_list])
-    agent_radii = np.array([agent.get_radius() for agent in agent_list])
-    dsts = np.linalg.norm(agent_positions - pos, axis=1) - agent_radii
-    inds = np.where(dsts <= radius)[0]
-    # e = time.time()
-    # print(e - s)
-    # print(len(inds)>0)
-    # print(len(inds))
-    return [agent_list[i] for i in inds]

@@ -14,28 +14,24 @@ from lib.aux import functions as fun
 
 
 class GuppiesViewer(object):
-    def __init__(self, width, height, caption="", fps=10, dt=0.1, display=True, record_video_to=None,
-                 record_image_to=None):
+    def __init__(self, width, height, caption="", fps=10, dt=0.1, show_display=True, record_video_to=None,
+                 record_image_to=None, zoom=1):
         x = 1550
         y = 400
         os.environ['SDL_VIDEO_WINDOW_POS'] = "%d,%d" % (x, y)
 
-        self._width = width
-        self._height = height
-        self._display = display
+        self.zoom = zoom
+        self.caption = caption
+        self.window_size = width, height
+        self.show_display = show_display
         self._t = pygame.time.Clock()
         self._fps = fps
         self.dt = dt
+        self.center = np.array([0.0, 0.0])
+        self.center_lim = np.array([0.0, 0.0])
 
-        if display:
-            flags = pygame.HWSURFACE | pygame.DOUBLEBUF
-            self._window = pygame.display.set_mode((width, height), flags)
-            pygame.display.set_caption(caption)
-            pygame.event.set_allowed(pygame.QUIT)
-        else:
-            flags = pygame.HWSURFACE | pygame.DOUBLEBUF
-            self._window = pygame.Surface((width, height), flags)
-        # raise
+        self.display_size = self.scale_dims()
+        self._window = self.init_screen()
 
         if record_video_to:
             import imageio
@@ -52,15 +48,43 @@ class GuppiesViewer(object):
         self._scale = np.array([[1., .0], [.0, -1.]])
         self._translation = np.zeros(2)
 
+    def init_screen(self):
+        if self.show_display:
+            flags = pygame.HWSURFACE | pygame.DOUBLEBUF
+            window = pygame.display.set_mode(self.window_size, flags)
+            pygame.display.set_caption(self.caption)
+            pygame.event.set_allowed(pygame.QUIT)
+        else:
+            flags = pygame.HWSURFACE | pygame.DOUBLEBUF
+            window = pygame.Surface(self.display_size, flags)
+        return window
+
+    def scale_dims(self):
+        _width = int(self.window_size[0] / self.zoom)
+        _height = int(self.window_size[1] / self.zoom)
+        return _width, _height
+
+    def zoom_screen(self, d_zoom, pos=None):
+        if pos is None:
+            pos = self.get_mouse_position()
+        if 0.001 <= self.zoom + d_zoom <= 1:
+            self.zoom = np.round(self.zoom + d_zoom, 2)
+            self.display_size = self.scale_dims()
+            self.center = np.clip(self.center - pos * d_zoom, self.center_lim, -self.center_lim)
+        if self.zoom == 1.0:
+            self.center = np.array([0.0, 0.0])
+
     def __del__(self):
         self.close()
 
     def set_bounds(self, left, right, bottom, top):
         assert right > left and top > bottom
-        scale_x = self._width / (right - left)
-        scale_y = self._height / (top - bottom)
+        scale_x = self.display_size[0] / (right - left)
+        scale_y = self.display_size[1] / (top - bottom)
         self._scale = np.array([[scale_x, .0], [.0, -scale_y]])
-        self._translation = np.array([-left * scale_x, -bottom * scale_y])
+        self._translation = np.array([(-left * self.zoom) * scale_x, (-bottom * self.zoom) * scale_y])
+        self._translation += self.center * [-scale_x, scale_y]
+        self.center_lim = (1 - self.zoom) * np.array([left, bottom])
 
     def _transform(self, position):
         return np.round(self._scale.dot(position) + self._translation).astype(int)
@@ -130,13 +154,7 @@ class GuppiesViewer(object):
         return np.linalg.inv(self._scale).dot(mouse_pos)
 
     def render(self):
-        if self._display:
-            # for event in pygame.event.get():
-            #     if event.type == pygame.QUIT:
-            #         print('DD')
-            #     elif event.type == pygame.VIDEORESIZE:
-            #         print('FF')
-
+        if self.show_display:
             pygame.display.flip()
             image = pygame.surfarray.pixels3d(self._window)
             self._t.tick(self._fps)
@@ -146,7 +164,8 @@ class GuppiesViewer(object):
             self._video_writer.append_data(np.flipud(np.rot90(image)))
         if self._image_writer:
             self._image_writer.append_data(np.flipud(np.rot90(image)))
-        # return image
+            self._image_writer = None
+        return image
 
     @staticmethod
     def close_requested():
@@ -164,6 +183,11 @@ class GuppiesViewer(object):
         del self
         print('Screen closed')
 
+    def move_center(self, dx=0, dy=0, pos=None):
+        if pos is None:
+            pos = self.center - self.center_lim * [dx, dy]
+        self.center = np.clip(pos, self.center_lim, -self.center_lim)
+
 
 class ScreenItem:
     def __init__(self, color=None):
@@ -172,37 +196,51 @@ class ScreenItem:
         else:
             self.color = color
 
+    def set_color(self, color):
+        self.color = color
 
-class InputBox:
+
+class InputBox(ScreenItem):
     def __init__(self, visible=False, text='', color_inactive=None, color_active=None,
-                 screen_pos=None, linewidth=0.01, show_frame=False):
+                 screen_pos=None, linewidth=0.01, show_frame=False, agent=None, end_time=0):
+        super().__init__(color=color_active)
         self.screen_pos = screen_pos
         self.linewidth = linewidth
         self.show_frame = show_frame
-        self.set_shape(self.screen_pos)
+        # self.set_shape(self.screen_pos)
         if color_active is None:
             color_active = pygame.Color('dodgerblue2')
         self.color_active = color_active
         if color_inactive is None:
             color_inactive = pygame.Color('lightskyblue3')
         self.color_inactive = color_inactive
-        self.color = self.color_inactive
         self.visible = visible
         self.active = False
         self.font = pygame.font.Font(None, 32)
         self.text = text
+        self.text_font = None
+        self.agent = agent
+        self.end_time = end_time
+        self.shape = None
 
     def draw(self, viewer):
-        if self.visible and self.shape is not None:
-            # Render the current text.
-            txt_surface = self.font.render(self.text, True, self.color)
-            # Blit the text.
-            viewer.draw_text_box(txt_surface, (self.shape.x + 5, self.shape.y + 5))
-            # viewer._window.blit(txt_surface, (self.shape.x + 5, self.shape.y + 5))
-            if self.show_frame :
-                # Blit the input_box rect.
-                viewer.draw_polygon(self.shape, color=self.color, filled=False, width=self.linewidth)
-                # pygame.draw.rect(viewer._window, self.color, self.shape, self.linewidth)
+        if self.visible:
+            if self.agent is not None:
+                self.set_shape(self.agent.model.space2screen_pos(self.agent.get_position()))
+                self.color = self.agent.default_color
+            if self.shape is not None:
+                # Render the current text.
+                txt_surface = self.font.render(self.text, True, self.color)
+                # Blit the text.
+                viewer.draw_text_box(txt_surface, (self.shape.x + 5, self.shape.y + 5))
+                # viewer._window.blit(txt_surface, (self.shape.x + 5, self.shape.y + 5))
+                if self.show_frame:
+                    # Blit the input_box rect.
+                    viewer.draw_polygon(self.shape, color=self.color, filled=False, width=self.linewidth)
+                    # pygame.draw.rect(viewer._window, self.color, self.shape, self.linewidth)
+            elif self.text_font is not None:
+                self.text_font = self.font_large.render(self.text, 1, self.color)
+                viewer.draw_text_box(self.text_font, self.text_font_r)
 
     def switch(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -233,10 +271,24 @@ class InputBox:
         self.visible = False
 
     def set_shape(self, pos):
-        if pos is None or any(np.isnan(pos)) :
-            self.shape=None
-        else :
+        if pos is not None and not any(np.isnan(pos)):
             self.shape = pygame.Rect(pos[0], pos[1], 140, 32)
+        else:
+            self.shape = None
+
+    def render(self, width, height):
+        # Scale to screen
+        x_pos = int(width * 0.85)
+        y_pos = int(height * 0.1)
+        large_font_size = int(1 / 20 * width)
+
+        # Fonts
+        self.font_large = pygame.font.SysFont("SansitaOne.tff", large_font_size)
+
+        # Hour
+        self.text_font = self.font_large.render(self.text, 1, self.color)  # zero-pad hours to 2 digits
+        self.text_font_r = self.text_font.get_rect()
+        self.text_font_r.center = (x_pos * 0.91, y_pos)
 
 
 class SimulationClock(ScreenItem):
@@ -388,6 +440,7 @@ class SimulationScale(ScreenItem):
     def draw_scale(self, viewer):
         for line in self.lines:
             pygame.draw.line(viewer._window, self.color, line[0], line[1], 1)
+        self.scale_font = self.font.render(f'{self.scale_in_mm} mm', 1, self.color)
         viewer.draw_text_box(self.scale_font, self.scale_font_r)
 
 
@@ -396,26 +449,34 @@ class SimulationState(ScreenItem):
     def __init__(self, model, color=None):
         super().__init__(color=color)
         self.model = model
-        self.Nagents = 0
+        # self.Nagents = 0
+        self.text = ''
+        # self.text = f'# larvae : {self.Nagents}'
 
-    def update_state(self):
-        c = np.isnan(self.model.get_fly_positions())
-        self.Nagents = len(c[c[:, 0] == False])
+    # def update_state(self):
+    #     c = np.isnan(self.model.get_fly_positions())
+    #     self.Nagents = len(c[c[:, 0] == False])
+    #     self.text = f'# larvae : {self.Nagents}'
 
     def render_state(self, width, height):
-        x_pos = int(width * 0.9)
+        x_pos = int(width * 0.85)
         y_pos = int(height * 0.94)
         font_size = int(1 / 40 * width)
 
         self.font = pygame.font.SysFont("Trebuchet MS", font_size)
-        self.state_font = self.font.render(f'# larvae : {self.Nagents}', 1, self.color)
+        self.state_font = self.font.render(self.text, 1, self.color)
         self.state_font_r = self.state_font.get_rect()
         self.state_font_r.center = (x_pos, y_pos)
 
     def draw_state(self, viewer):
-        self.update_state()
-        self.state_font = self.font.render(f'# larvae : {self.Nagents}', 1, self.color)
+        # self.update_state()
+        self.state_font = self.font.render(self.text, 1, self.color)
         viewer.draw_text_box(self.state_font, self.state_font_r)
+
+    def set_text(self,text):
+        self.text=text
+
+
 
 
 def draw_velocity_arrow(_screen, agent):

@@ -13,7 +13,6 @@ from lib.aux import functions as fun
 from lib.anal.fitting import *
 from lib.aux.parsing import parse_dataset, multiparse_dataset_by_sliding_window
 from lib.anal.plotting import *
-from lib.conf import mesa_space_in_mm
 import lib.conf.env_modes as env
 from lib.stor.datagroup import SimParConf
 from lib.stor.paths import Ref_path, Ref_fits, RefFolder
@@ -26,7 +25,9 @@ class LarvaDataset:
                  par_conf=SimParConf, arena_pars=env.dish(0.1),
                  filtered_at=np.nan, rescaled_by=np.nan,
                  save_data_flag=True, load_data=True,
-                 starvation_hours=[], deb_base_f=1):
+                 life_params={}
+                 # starvation_hours=[], deb_base_f=1
+                 ):
         self.par_config = par_conf
         self.save_data_flag = save_data_flag
         self.define_paths(dir)
@@ -45,10 +46,10 @@ class LarvaDataset:
                            'rescaled_by': rescaled_by,
                            'Npoints': Npoints,
                            'Ncontour': Ncontour,
-                           'starvation_hours' : starvation_hours,
-                           'deb_base_f' : deb_base_f
+                           # 'starvation_hours' : starvation_hours,
+                           # 'deb_base_f' : deb_base_f
                            }
-            self.config = {**self.config, **par_conf, **arena_pars}
+            self.config = {**self.config, **par_conf, **arena_pars, **life_params}
             print(f'Initialized dataset {id} with new configuration')
         self.__dict__.update(self.config)
         self.arena_pars = {'arena_xdim': self.arena_xdim,
@@ -728,7 +729,7 @@ class LarvaDataset:
 
         pars, pos_xy_pars = self.get_par_list(track_point=track_point, points=spinepoints, centroid=centroid,
                                               contours=contours)
-        s, e, ids = self.get_smaller_dataset(ids=agent_ids, pars=pars, time_range_in_ticks=time_range_in_ticks,
+        s, e, ids = self.get_smaller_dataset(ids=agent_ids, pars=None, time_range_in_ticks=time_range_in_ticks,
                                         dynamic_color=dynamic_color)
 
         if len(ids) == 1:
@@ -742,13 +743,15 @@ class LarvaDataset:
             trajectory_colors = s[dynamic_color]
         else:
             trajectory_colors = None
+        # FIXME xy are saved in mm and that messes things up. right now i scale the arena up, but this makes the scale wrong
         if env_params is None:
             if arena_pars is None:
                 arena_pars = self.arena_pars
-            env_params = {'arena_params': arena_pars,
-                          'space_params': mesa_space_in_mm}
+            env_params = {'arena_params': arena_pars}
         arena_dims_in_m = env_params['arena_params']['arena_xdim'], env_params['arena_params']['arena_ydim']
         arena_dims = [i * 1000 for i in arena_dims_in_m]
+        env_params['arena_params']['arena_xdim'] = arena_dims[0]
+        env_params['arena_params']['arena_ydim'] = arena_dims[1]
 
         if align_mode is not None:
             s = self.align_trajectories(s=s, mode=align_mode, arena_dims=arena_dims, track_point=track_point)
@@ -903,7 +906,7 @@ class LarvaDataset:
             print('Bending angle not defined. Can not compute angles')
             return
         elif b_conf == 'from_vectors':
-            print(f'Computing bending angle as the difference between front and rear orientations')
+            print(f'Computing bending angle as the difference between front and rear orients')
             s['bend'] = s.apply(lambda r: fun.angle_dif(r['front_orientation'], r['rear_orientation']), axis=1)
         elif b_conf == 'from_angles':
             self.compute_spineangles(mode=mode, is_last=False)
@@ -935,7 +938,7 @@ class LarvaDataset:
 
         for key in ['front_vector_start', 'front_vector_stop', 'rear_vector_start', 'rear_vector_stop']:
             if self.config[key] is None:
-                print('Front and rear vectors are not defined. Can not compute orientations')
+                print('Front and rear vectors are not defined. Can not compute orients')
                 return
         else:
             f1, f2 = self.config['front_vector_start'], self.config['front_vector_stop']
@@ -947,7 +950,7 @@ class LarvaDataset:
         xy = [nam.xy(self.points[i]) for i in range(len(self.points))]
         s = self.step_data
         # s = self.step_data.copy(deep=False)
-        print(f'Computing front and rear orientations')
+        print(f'Computing front and rear orients')
         xy_pars = fun.flatten_list([xy[i] for i in [f2 - 1, f1 - 1, r2 - 1, r1 - 1]])
         xy_ar = s[xy_pars].values
         Npoints = int(xy_ar.shape[1] / 2)
@@ -961,7 +964,7 @@ class LarvaDataset:
             s[a] = c[z].T
         if mode == 'full':
             N = len(self.segs)
-            print(f'Computing additional orientations for {N} spinesegments')
+            print(f'Computing additional orients for {N} spinesegments')
             ors = nam.orient(self.segs)
             xy_pars = fun.flatten_list([xy[i] for i in range(N + 1)])
             xy_ar = s[xy_pars].values
@@ -975,7 +978,7 @@ class LarvaDataset:
                 s[a] = c[z].T
         if is_last:
             self.save()
-        print('All orientations computed')
+        print('All orients computed')
 
     def unwrap_orientations(self, is_last=True):
         if self.step_data is None:
@@ -990,7 +993,7 @@ class LarvaDataset:
                 s.loc[(slice(None), id), nam.unwrap(p)] = fun.unwrap_deg(ts)
         if is_last:
             self.save()
-        print('All orientations unwrapped')
+        print('All orients unwrapped')
 
     def compute_angular_metrics(self, mode='minimal', is_last=True):
         if self.step_data is None:
@@ -1164,7 +1167,7 @@ class LarvaDataset:
                 orientations = ['rear_orientation']
 
         if not set(orientations).issubset(s.columns):
-            print('Required orientations not found. Component linear metrics not computed.')
+            print('Required orients not found. Component linear metrics not computed.')
             return
 
         xy_params = self.raw_or_filtered_xy(points)
