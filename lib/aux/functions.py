@@ -221,7 +221,10 @@ def flatten_dict(d, parent_key='', sep='.'):
     for k, v in d.items():
         new_key = parent_key + sep + k if parent_key else k
         if isinstance(v, collections.MutableMapping):
-            items.extend(flatten_dict(v, new_key, sep=sep).items())
+            if len(v) > 0:
+                items.extend(flatten_dict(v, new_key, sep=sep).items())
+            else:
+                items.append((new_key, 'empty_dict'))
         else:
             items.append((new_key, v))
     return dict(items)
@@ -237,20 +240,18 @@ def reconstruct_dict(param_group):
             if p.f_is_empty():
                 dict.update({p.v_name: None})
             else:
-                dict.update({p.v_name: p.f_get()})
+                v = p.f_get()
+                if v == 'empty_dict':
+                    v = {}
+                dict.update({p.v_name: v})
 
     return dict
 
 
 def group_list_by_n(l, n):
     if not len(l) % n == 0.0:
-        print('List length must be multiple of n')
-    else:
-        k = int(len(l) / n)
-        nl = []
-    for i in range(k):
-        nl.append(l[i * n:(i + 1) * n])
-    return nl
+        raise ValueError('List length must be multiple of n')
+    return [l[i * n:(i + 1) * n] for i in range(int(len(l) / n))]
 
 
 def weib(x, n, a):
@@ -366,7 +367,7 @@ def compute_centroid(points):
     return centroid
 
 
-def inside_polygon(points,tank_polygon):
+def inside_polygon(points, tank_polygon):
     return all([tank_polygon.contains(Point(x, y)) for x, y in points])
     # # // p is your point, p.x is the x coord, p.y is the y coord
     # Xmin, Xmax, Ymin, Ymax = space_edges_for_screen
@@ -382,7 +383,12 @@ def inside_polygon(points,tank_polygon):
 
 
 def border_collision(line, border_lines):
-    return any([line.crosses(l) for l in border_lines])
+    # for l in border_lines :
+    #     print(l)
+    #     print(line)
+    #     print()
+    return any([line.intersection(l) for l in border_lines])
+
 
 def larva_collision(line, larva_bodies):
     return any([line.intersects(p) for p in larva_bodies])
@@ -745,11 +751,39 @@ def update_extrema(pairs, ids, mins, maxs, first_xy, last_xy):
     return ids, mins, maxs, first_xy, last_xy
 
 
-def positions_in_circle(r, N):
+def xy_along_circle(N, loc=(0.0, 0.0), radius=1.0):
+    # print(r, N, loc)
     angles = np.linspace(0, np.pi * 2, N + 1)[:-1]
-    # print(angles)
-    p = np.array([(np.cos(a) * r, np.sin(a) * r) for a in angles])
+    p = [(loc[0] + np.cos(a) * radius, loc[1] + np.sin(a) * radius) for a in angles]
     return p
+
+
+def xy_uniform_circle(radius, N, loc=(0.0, 0.0)):
+    angles = np.random.uniform(0, 2 * np.pi, N).tolist()
+    rs = np.random.uniform(0.0, radius, N).tolist()
+    # rs = np.sqrt(np.random.uniform(0.0, radius, N)).tolist()
+    p = [(loc[0] + r * np.cos(a), loc[1] + r * np.sin(a)) for a, r in zip(angles, rs)]
+    return p
+
+
+
+def generate_xy_distro(mode, shape, N, loc=(0.0, 0.0), scale=0.0) :
+    loc, scale=np.array(loc), np.array(scale)
+    if mode == 'uniform':
+        if shape=='circle' :
+            return xy_uniform_circle(radius=np.mean(scale), N=N, loc=loc)
+        elif shape == 'rect':
+            # print(-scale/2)
+            return list(map(tuple,np.random.uniform(low=-scale/2, high=scale/2, size=(N, 2))+loc))
+    elif mode == 'normal':
+        return np.random.normal(loc=loc, scale=scale, size=(N, 2)).tolist()
+    elif mode == 'periphery':
+        if shape == 'circle':
+            return xy_along_circle(N, loc=loc, radius=np.max(scale))
+        elif shape == 'rect':
+            return xy_along_circle(N, loc=loc, radius=np.mean(scale))
+    else :
+        raise ValueError (f'XY distribution {mode} not implemented.')
 
 
 def generate_orientations(num_identical, circle_parsing, iterations):
@@ -790,14 +824,14 @@ def print_dict(d):
 
 def dict_to_file(dictionary, filename):
     orig_stdout = sys.stdout
-    f = open(filename, 'w')
+    f = open(filename, 'W')
     sys.stdout = f
     print_dict(dictionary)
     sys.stdout = orig_stdout
     f.close()
-    # sys.stdout = open(filename, 'w')
+    # sys.stdout = open(filename, 'W')
     # sys.stdout = stdout
-    # with open(filename, 'w') as sys.stdout: print_dict(dictionary)
+    # with open(filename, 'W') as sys.stdout: print_dict(dictionary)
 
 
 def random_colors(n):
@@ -816,8 +850,10 @@ def random_colors(n):
         ret.append(np.array([r, g, b]))
     return ret
 
-def round2significant(a, significant_digits) :
+
+def round2significant(a, significant_digits):
     return round(a, significant_digits - int(math.floor(math.log10(abs(a)))) - 1)
+
 
 # Create a bilaterally symmetrical 2D contour with the long axis along x axis
 
@@ -884,7 +920,7 @@ def segment_body(N, xy0, seg_ratio=None, centered=True):
 
 @contextmanager
 def suppress_stdout():
-    with open(os.devnull, "w") as devnull:
+    with open(os.devnull, "W") as devnull:
         old_stdout = sys.stdout
         sys.stdout = devnull
         try:
@@ -892,37 +928,46 @@ def suppress_stdout():
         finally:
             sys.stdout = old_stdout
 
+
 def unique_list(l):
     seen = set()
     seen_add = seen.add
     return [x for x in l if not (x in seen or seen_add(x))]
 
 
-def agents_spatial_query(pos, radius, agent_list):
-    if len(agent_list) == 0:
-        return []
-    agent_positions = np.array([agent.get_position() for agent in agent_list])
-    agent_radii = np.array([agent.get_radius() for agent in agent_list])
-    dsts = np.linalg.norm(agent_positions - pos, axis=1) - agent_radii
-    inds = np.where(dsts <= radius)[0]
-    return [agent_list[i] for i in inds]
+# def agents_spatial_query(pos, radius, agent_list):
+#     if len(agent_list) == 0:
+#         return []
+#
+#     agent_positions = np.array([agent.get_position() for agent in agent_list])
+#     agent_radii = np.array([agent.get_radius() for agent in agent_list])
+#     dsts = np.linalg.norm(agent_positions - pos, axis=1) - agent_radii
+#     inds = np.where(dsts <= radius)[0]
+#     valid = [agent_list[i] for i in inds if agent_list[i].amount > 0]
+#     valid = [a for a in agent_list if (a.contained(pos) and a.amount>0)]
+#     # print(valid)
+#     return valid
 
-def agent_dict2list(dic) :
-    l=[]
-    for id, pars in dic.items() :
-        pars['unique_id']=id
+
+def agent_dict2list(dic, header='unique_id'):
+    # print(dic)
+    l = []
+    for id, pars in dic.items():
+        pars[header] = id
         l.append(pars)
     return l
 
-def agent_list2dict(l) :
-    d={}
-    for a in l :
-        id=a['unique_id']
-        a.pop('unique_id')
-        d[id]=a
+
+def agent_list2dict(l, header='unique_id'):
+    d = {}
+    for a in l:
+        id = a[header]
+        a.pop(header)
+        d[id] = a
     return d
 
-def compute_dst(point1, point2) :
+
+def compute_dst(point1, point2):
     x1, y1 = point1
     x2, y2 = point2
     return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
@@ -942,16 +987,32 @@ def N_colors(N, as_rgb=False):
     else:
         colormap = cm.get_cmap('brg')
         cs = [colormap(i) for i in np.linspace(0, 1, N)]
-    if as_rgb :
-        cs=[colors.to_rgb(c) for c in cs]
-        cs=[tuple([i*255 for i in c]) for c in cs]
+    if as_rgb:
+        cs = [colorname2tuple(c) for c in cs]
     return cs
 
-def LvsRtoggle(side) :
-    if side=='Left' :
+
+def colorname2tuple(name):
+    c0 = colors.to_rgb(name)
+    c1 = tuple([i * 255 for i in c0])
+    return c1
+
+
+def LvsRtoggle(side):
+    if side == 'Left':
         return 'Right'
-    elif side=='Right':
+    elif side == 'Right':
         return 'Left'
-    else :
+    else:
         raise ValueError(f'Argument {side} is neither Left nor Right')
 
+
+def mutate_value(v, range, scale=0.1):
+    r0, r1 = range
+    return float(np.round(np.clip(np.random.normal(loc=v, scale=scale * np.abs(r1 - r0)), a_min=r0, a_max=r1), 2))
+
+
+def odor(id=None, intensity=0.0, spread=0.0002):
+    return {'odor_id': id,
+            'odor_intensity': intensity,
+            'odor_spread': spread}

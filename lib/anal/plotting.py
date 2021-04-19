@@ -1,28 +1,23 @@
+import copy
 import heapq
 import itertools
-
-import matplotlib.patches as mpatches
+import warnings
 import pandas as pd
 import seaborn as sns
 from matplotlib import cm, transforms, ticker, patches
-from matplotlib.patches import Wedge
-from matplotlib.ticker import ScalarFormatter
 from mpl_toolkits.mplot3d import Axes3D
-from scipy import signal
-from scipy import stats
-from scipy.interpolate import griddata
-from scipy.signal import butter, sosfiltfilt
+import statsmodels.api as sm
+from scipy import stats, signal
 from sklearn.linear_model import LinearRegression
 import powerlaw as pow
-
 from PIL import Image
 
 from lib.anal.fitting import *
 from lib.aux.functions import weib, flatten_list, N_colors
 from lib.anal.combining import combine_images, combine_pdfs
+from lib.conf import par_conf
 
 from lib.stor.paths import DebFolder
-from lib.conf.par_db import par_db
 
 '''
 Generic plot function. Uses the next two functions internally'''
@@ -59,11 +54,6 @@ def plot_mean_and_range(x, mean, lb, ub, axis, color_mean=None, color_shading=No
         axis.plot(x, mean, color_mean)
 
     # pass
-
-
-# def plot_dataset_for_each(agent_ids, **kwargs):
-#     for agent_id in agent_ids:
-#         plot_dataset(agent_ids=[agent_id], **kwargs)
 
 
 def plot_dataset(save_to, save_as=None, mode='time', subplot_structure=[1, 1],
@@ -141,6 +131,7 @@ def plot_dataset(save_to, save_as=None, mode='time', subplot_structure=[1, 1],
         filename = save_as
     filepath = os.path.join(save_to, filename)
     save_plot(fig, filepath, filename)
+    return fig
 
 
 def parsed_time_plot(fig, axs, data, agent_ids, parameters, dt=None, Nsubplots=1,
@@ -413,12 +404,12 @@ def time_plot(fig, axs, data, agent_ids, parameters, dt=None, Nsubplots=1,
             colors = ['white', 'grey']
             if show_legend:
                 if legend_labels is None:
-                    patches = [mpatches.Patch(color=color, label=name) for name, color in
+                    patch = [patches.Patch(color=color, label=name) for name, color in
                                zip(background_for_chunks, colors)]
                 else:
-                    patches = [mpatches.Patch(color=color, label=name) for name, color in
+                    patch = [patches.Patch(color=color, label=name) for name, color in
                                zip(legend_labels, colors)]
-                plt.legend(handles=patches, loc='upper right', prop={'size': 15})
+                plt.legend(handles=patch, loc='upper right', prop={'size': 15})
             for i, (chunk, color) in enumerate(zip(background_for_chunks, colors)):
                 start_flag = f'{chunk}_start'
                 stop_flag = f'{chunk}_stop'
@@ -757,11 +748,12 @@ def plot_marked_strides(dataset, agent_ids=None, title=' ', show_legend=True, sh
     dst = nam.scal('dst')
     v = nam.scal('vel')
 
+    fig_dict={}
     for agent_id in agent_ids:
         filepaths = [f'{agent_id}_{f}' for f in generic_filepaths]
-        for figsize, filepath, xlim in zip(figsizes, filepaths, xlims):
+        for i,(figsize, filepath, xlim) in enumerate(zip(figsizes, filepaths, xlims)):
             try:
-                d.plot_step_data(parameters=[v], mode='time', figsize=figsize, agent_ids=[agent_id],
+                fig=d.plot_step_data(parameters=[v], mode='time', figsize=figsize, agent_ids=[agent_id],
                                  ylabel=r'scal velocity, $v (sec^{-1})$', xlabel=r'time, $(sec)$', title=title,
                                  show_legend=show_legend,
                                  xlim=xlim,
@@ -770,9 +762,10 @@ def plot_marked_strides(dataset, agent_ids=None, title=' ', show_legend=True, sh
                                  legend_labels=['stride', 'pause'],
                                  marker_params=[nam.max(v), nam.min(v)],
                                  save_to=save_to, save_as=filepath)
+                fig_dict[f'strides_{agent_id}_{i}'] = fig
             except:
                 pass
-
+    return fig_dict
 
 def plot_marked_turns(dataset, agent_ids=None, turn_epochs=['Rturn', 'Lturn'],
                       vertical_boundaries=False, min_turn_angle=0, slices=[], return_fig=False):
@@ -818,7 +811,7 @@ def plot_marked_turns(dataset, agent_ids=None, turn_epochs=['Rturn', 'Lturn'],
     bv = nam.vel(b)
     ho = 'front_orientation'
     hov = nam.vel(ho)
-
+    fig_dict = {}
     for agent_id in agent_ids:
         filepaths = [f'{agent_id}_{f}' for f in generic_filepaths]
 
@@ -832,7 +825,7 @@ def plot_marked_turns(dataset, agent_ids=None, turn_epochs=['Rturn', 'Lturn'],
         ho0 = s[ho]
         hov0 = s[hov]
 
-        for filepath, figsize, xlim in zip(filepaths, figsizes, xlims):
+        for idx, (filepath, figsize, xlim) in enumerate(zip(filepaths, figsizes, xlims)):
             fig, axs = plt.subplots(1, 1, figsize=figsize)
 
             if turn_epochs is not None:
@@ -885,7 +878,8 @@ def plot_marked_turns(dataset, agent_ids=None, turn_epochs=['Rturn', 'Lturn'],
             plt.subplots_adjust(hspace=0.05, top=0.96, bottom=0.15, left=0.06, right=0.95)
             fig.savefig(f'{save_to}/{filepath}', dpi=300)
             print(f'Image saved as {filepath}')
-
+            fig_dict[f'turns_{agent_id}_{i}']=fig
+    return fig_dict
 
 def plot_velocity_spect_hist(dataset, agent_id=None,
                              titles=['scal velocity spectogram', 'scal velocity histogram'], return_fig=False):
@@ -1186,7 +1180,7 @@ def plot_pauses(dataset, Npauses=10, save_to=None, plot_simulated=False, return_
 def plot_debs(deb_dicts=None, save_to=None, save_as=None, mode='full', roversVSsitters=False, sim_only=False,
               start_at_sim_start=False, time_unit='hours', return_fig=False,
               datasets=None, labels=None, include_default_deb=False):
-    from lib.model.agents.deb import deb_dict, deb_default
+    from lib.model.deb import deb_dict, deb_default
     warnings.filterwarnings('ignore')
     if save_to is None:
         save_to = DebFolder
@@ -1302,8 +1296,8 @@ def plot_debs(deb_dicts=None, save_to=None, save_as=None, mode='full', roversVSs
         for j, (l, yl) in enumerate(zip(labels, ylabels)):
             if l == 'f_filt':
                 P = d['f']
-                sos = butter(N=1, Wn=4, btype='lowpass', analog=False, fs=Nticks / (s1 - s0), output='sos')
-                P = sosfiltfilt(sos, P)
+                sos = signal.butter(N=1, Wn=4, btype='lowpass', analog=False, fs=Nticks / (s1 - s0), output='sos')
+                P = signal.sosfiltfilt(sos, P)
             else:
                 P = d[l]
             ax = axs[j]
@@ -1361,13 +1355,13 @@ def plot_debs(deb_dicts=None, save_to=None, save_as=None, mode='full', roversVSs
         except:
             pass
 
-    axs[0].legend(handles=[mpatches.Patch(color=c, label=id) for c, id in zip(leg_cols, leg_ids)],
+    axs[0].legend(handles=[patches.Patch(color=c, label=id) for c, id in zip(leg_cols, leg_ids)],
                   labels=leg_ids, fontsize=20, loc='upper left', prop={'size': 15})
     fig.subplots_adjust(top=0.95, bottom=0.15, left=0.1, right=0.93, hspace=0.02)
     return process_plot(fig, save_to, save_as, return_fig)
 
 
-def plot_surface(x, y, z, labels, z0=None, title=None, save_to=None, save_as=None, pref=None):
+def plot_surface(x, y, z, labels, z0=None, title=None, save_to=None, save_as=None, pref=None, show=False):
     fig = plt.figure(figsize=(20, 10))
     if title is not None:
         fig.suptitle(title)
@@ -1387,7 +1381,8 @@ def plot_surface(x, y, z, labels, z0=None, title=None, save_to=None, save_as=Non
     ax.xaxis.set_major_locator(ticker.MaxNLocator(5))
     ax.yaxis.set_major_locator(ticker.MaxNLocator(5))
     ax.zaxis.set_major_locator(ticker.MaxNLocator(5))
-
+    if show :
+        plt.show()
     if save_to is not None:
         os.makedirs(save_to, exist_ok=True)
         if save_as is None:
@@ -1397,20 +1392,22 @@ def plot_surface(x, y, z, labels, z0=None, title=None, save_to=None, save_as=Non
         filepath = os.path.join(save_to, save_as)
         fig.savefig(filepath, dpi=300)
         print(f'Surface saved as {save_as}')
-    return ax
+    plt.close('all')
+    return fig
 
 
-def plot_heatmap(x, y, z, labels, title=None, save_to=None, save_as=None, pref=None):
+def plot_heatmap(x, y, z, labels, title=None, save_to=None, save_as=None, pref=None, show=False):
     # fig = plt.figure(figsize=(10, 5))
-    axs = sns.heatmap(z, annot=True, fmt="g", cmap=cm.coolwarm,
-                      xticklabels=x.tolist(), yticklabels=y.tolist(),
+    fig, ax = plt.subplots(figsize=(12, 10))
+    sns.heatmap(z, annot=True, fmt="g", cmap=cm.coolwarm,
+                      xticklabels=x.tolist(), yticklabels=y.tolist(), ax=ax,
                       cbar_kws={"orientation": "vertical",
                                 'label': labels[2],
                                 # 'ticks': [1, 0, -1]
                                 })
-    axs.xaxis.set_major_locator(ticker.MaxNLocator(4))
-    axs.yaxis.set_major_locator(ticker.MaxNLocator(4))
-    axs.xaxis.set_ticks_position('top')
+    ax.xaxis.set_major_locator(ticker.MaxNLocator(4))
+    ax.yaxis.set_major_locator(ticker.MaxNLocator(4))
+    ax.xaxis.set_ticks_position('top')
     # ax.yaxis.set_major_locator(ticker.MultipleLocator(5))
     # ax.yaxis.set_major_formatter(ticker.ScalarFormatter())
     # ax.set_size_cm(3.5, 3.5)
@@ -1418,11 +1415,12 @@ def plot_heatmap(x, y, z, labels, title=None, save_to=None, save_as=None, pref=N
     # cax.xaxis.set_major_locator(ticker.MaxNLocator(4))
 
     # ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
-    axs.set_ylabel(labels[1])
-    axs.set_xlabel(labels[0])
+    ax.set_ylabel(labels[1])
+    ax.set_xlabel(labels[0])
     if title is not None:
-        axs.set_suptitle(title, fontsize=20)
-
+        ax.set_suptitle(title, fontsize=20)
+    if show :
+        plt.show()
     if save_to is not None:
         os.makedirs(save_to, exist_ok=True)
         if save_as is None:
@@ -1432,18 +1430,116 @@ def plot_heatmap(x, y, z, labels, title=None, save_to=None, save_as=None, pref=N
         filepath = os.path.join(save_to, save_as)
         plt.savefig(filepath, dpi=300)
         print(f'Heatmap saved as {filepath}')
-    return axs
-
-
-def plot_3pars(df, labels, save_to, z0=None, pref=None):
-    x, y = np.unique(df[labels[0]].values), np.unique(df[labels[1]].values)
-    X, Y = np.meshgrid(x, y)
-
-    z = df[labels[2]].values.reshape(X.shape).T
-
-    plot_heatmap(x, y, z, labels, save_to=save_to, pref=pref)
-    plot_surface(X, Y, z, labels, save_to=save_to, z0=z0, pref=pref)
     plt.close('all')
+    return fig
+
+
+def plot_3pars(df, labels, save_to, z0=None, pref=None, show=False):
+    fig_dict={}
+    pr=f'{labels[0]}VS{labels[1]}'
+    fig1=plot_3d(df, labels, save_to, pref=pref, save_as=None, show=show)
+    fig_dict[f'{pr}_3d']=fig1
+    try:
+        x, y = np.unique(df[labels[0]].values), np.unique(df[labels[1]].values)
+        X, Y = np.meshgrid(x, y)
+
+        z = df[labels[2]].values.reshape(X.shape).T
+
+        fig2=plot_heatmap(x, y, z, labels, save_to=save_to, pref=pref, show=show)
+        fig3=plot_surface(X, Y, z, labels, save_to=save_to, z0=z0, pref=pref, show=show)
+        fig_dict[f'{pr}_heatmap']=fig2
+        fig_dict[f'{pr}_surface']=fig3
+    except :
+        pass
+    return fig_dict
+
+def plot_3d(df, labels, save_to, pref=None, save_as=None, show=False) :
+    l0,l1,l2=labels
+    X = df[[l0, l1]]
+    y = df[l2]
+
+    X = sm.add_constant(X)
+    est = sm.OLS(y, X).fit()
+
+    xx1, xx2 = np.meshgrid(np.linspace(X[l0].min(), X[l0].max(), 100),
+                           np.linspace(X[l1].min(), X[l1].max(), 100))
+
+    # plot the hyperplane by evaluating the parameters on the grid
+    Z = est.params[0] + est.params[1] * xx1 + est.params[2] * xx2
+
+    # create matplotlib 3d axes
+    fig = plt.figure(figsize=(12, 8))
+    ax = Axes3D(fig, azim=115, elev=15)
+
+    # plot hyperplane
+    surf = ax.plot_surface(xx1, xx2, Z, cmap=plt.cm.RdBu_r, alpha=0.6, linewidth=0)
+
+    # plot data points - points over the HP are white, points below are black
+    resid = y - est.predict(X)
+    ax.scatter(X[resid >= 0][l0], X[resid >= 0][l1], y[resid >= 0], color='black', alpha=0.4, facecolor='white')
+    ax.scatter(X[resid < 0][l0], X[resid < 0][l1], y[resid < 0], color='black', alpha=0.4)
+
+    ax.xaxis.set_major_locator(ticker.MaxNLocator(4))
+    ax.yaxis.set_major_locator(ticker.MaxNLocator(4))
+    ax.zaxis.set_major_locator(ticker.MaxNLocator(4))
+
+    # set axis labels
+    ax.set_xlabel(l0, labelpad=20)
+    ax.set_ylabel(l1, labelpad=20)
+    ax.set_zlabel(l2, labelpad=20)
+    # ax.xaxis.set_label_position('top')
+    # ax.yaxis.set_label_position('top')
+    # ax.zaxis.set_ticks_position('bottom')
+    # ax.xaxis._axinfo['label']['space_factor'] = -6.8
+    # ax.yaxis._axinfo['label']['space_factor'] = -6.8
+    # ax.zaxis._axinfo['label']['space_factor'] = -6.8
+
+    if show:
+        plt.show()
+    if save_to is not None:
+        os.makedirs(save_to, exist_ok=True)
+        if save_as is None:
+            save_as = f'3d_plot.{suf}'
+            if pref is not None:
+                save_as = f'{pref}_{save_as}'
+        filepath = os.path.join(save_to, save_as)
+        plt.savefig(filepath, dpi=300)
+        print(f'3D plot saved as {filepath}')
+    plt.close('all')
+    return fig
+
+# f='../../data/SimGroup/batch_runs/chemorbit/chemotaxis_local_23'
+# ff=f'{f}/results.csv'
+# df=pd.read_csv(ff, index_col=0)
+# labels=['mean', 'decay_coef', 'scaled_dispersion']
+# plot_3d(df, labels, f, show=True)
+
+
+def plot_2d(df, labels, save_to, pref=None, save_as=None, show=False) :
+    par = labels[0]
+    res = labels[0]
+    p = df[par].values
+    r = df[res].values
+    fig, axs = plt.subplots(1, 1, figsize=(10, 10))
+    axs.scatter(p, r)
+    axs.set_xlabel(par)
+    axs.set_ylabel(res)
+    if show:
+        plt.show()
+    if save_to is not None:
+        os.makedirs(save_to, exist_ok=True)
+        if save_as is None:
+            save_as = f'2d_plot.{suf}'
+            if pref is not None:
+                save_as = f'{pref}_{save_as}'
+        filepath = os.path.join(save_to, save_as)
+        plt.savefig(filepath, dpi=300)
+        print(f'3D plot saved as {filepath}')
+    plt.close('all')
+    return fig
+
+
+
 
 
 def plot_bend2orientation_analysis(dataset, save_to=None, save_as=f'bend2orientation.{suf}'):
@@ -1672,7 +1768,7 @@ def plot_spatiotemporal_variation(dataset, spatial_cvs, temporal_cvs, sizes=None
     print(f'Image saved as {filepath}')
 
 
-def plot_distance_to_source(dataset, experiment):
+def plot_distance_to_source(dataset, exp_type):
     d = dataset
     s = d.step_data
     save_to = os.path.join(d.plot_dir, 'distance2source_timeplots')
@@ -1683,33 +1779,33 @@ def plot_distance_to_source(dataset, experiment):
     l_time = 'time $(sec)$'
 
     Nquantiles = 3
-
-    if experiment == 'chemorbit':
+    fig_dict={}
+    if exp_type == 'chemorbit':
         y = 20
-        d.plot_step_data(parameters=['dst_to_center'], title=' ', mode='time',
+        fig_dict['dst_to_source'] = d.plot_step_data(parameters=['dst_to_center'], title=' ', mode='time',
                          figsize=figsize, plot_quantiles=Nquantiles,
                          xlim=[0, 600], ylim=[0, y], xlabel=l_time, ylabel=l_dst,
                          save_to=save_to, save_as=f'dst_to_source_timeplot.{suf}')
 
         y = 5
-        d.plot_step_data(parameters=['scaled_dst_to_center'], title=' ', mode='time',
+        fig_dict['scaled_dst_to_source'] =d.plot_step_data(parameters=['scaled_dst_to_center'], title=' ', mode='time',
                          figsize=figsize, plot_quantiles=Nquantiles,
                          xlim=[0, 600], ylim=[0, y], xlabel=l_time, ylabel=l_sc_dst,
                          save_to=save_to, save_as=f'scaled_dst_to_source_timeplot.{suf}')
 
-    elif experiment == 'chemotax':
+    elif exp_type == 'chemotax':
         y = 450
-        d.plot_step_data(parameters=['dst_to_chemotax_odor'], title=' ', mode='time',
+        fig_dict['dst_to_source'] =d.plot_step_data(parameters=['dst_to_chemotax_odor'], title=' ', mode='time',
                          figsize=figsize, plot_quantiles=Nquantiles,
                          xlim=[0, 180], ylim=[0, y], xlabel=l_time, ylabel=l_dst,
                          save_to=save_to, save_as=f'dst_to_source_timeplot.{suf}')
 
         y = 120
-        d.plot_step_data(parameters=['scaled_dst_to_chemotax_odor'], title=' ', mode='time',
+        fig_dict['scaled_dst_to_source'] =d.plot_step_data(parameters=['scaled_dst_to_chemotax_odor'], title=' ', mode='time',
                          figsize=figsize, plot_quantiles=Nquantiles,
                          xlim=[0, 180], ylim=[0, y], xlabel=l_time, ylabel=l_sc_dst,
                          save_to=save_to, save_as=f'scaled_dst_to_source_timeplot.{suf}')
-
+    return  fig_dict
 
 def plot_olfaction(dataset):
     d = dataset
@@ -1777,7 +1873,7 @@ def plot_2D_countour(x, y, z, dimensions, Cmax, filepath):
     xi = np.linspace(xmin, xmax, 1000)
     yi = np.linspace(ymin, ymax, 1000)
     ## grid the data.
-    zi = griddata((x, y), z, (xi[None, :], yi[:, None]), method='cubic')
+    zi = interpolate.griddata((x, y), z, (xi[None, :], yi[:, None]), method='cubic')
     levels = np.linspace(0.0, Cmax, 10000)
     fig = plt.figure(figsize=(xmax - xmin, ymax - ymin))
     # ax = plt.gca()
@@ -1913,8 +2009,8 @@ def plot_stride_Dorient(datasets, labels, simVSexp=False, absolute=True, save_to
     filename = f'stride_orient_change.{suf}'
 
     par_shorts = ['str_fo', 'str_ro']
-    pars, sim_labels, exp_labels, xlabels = [
-        par_db[['par', 'symbol', 'exp_symbol', 'unit']].loc[par_shorts].values[:, k].tolist() for k in range(4)]
+    pars, sim_labels, exp_labels, xlabels = par_conf.par_dict_lists(shorts=par_shorts, to_return=['par', 'symbol', 'exp_symbol', 'unit'])
+
     ranges = [80, 80]
 
     if simVSexp:
@@ -1973,9 +2069,7 @@ def plot_interference(datasets, labels, mode='orientation', agent_idx=None,
     elif mode == 'spinelength':
         par_shorts.append('l')
 
-    pars, sim_labels, exp_labels, units = [
-        par_db[['par', 'symbol', 'exp_symbol', 'unit']].loc[par_shorts].values[:, k].tolist() for k in range(4)]
-    # print(pars, sim_labels, exp_labels, units)
+    pars, sim_labels, exp_labels, units = par_conf.par_dict_lists(shorts=par_shorts, to_return=['par', 'symbol', 'exp_symbol', 'unit'])
     fig, axs = plt.subplots(len(pars), 1, figsize=(10, len(pars) * 5), sharex=True)
     axs = axs.ravel()
 
@@ -2156,22 +2250,16 @@ def plot_food_amount(datasets, labels, save_to=None, save_as=None, filt_amount=F
         # print(dst_m)
         # print(type(dst_m))
         if filt_amount:
-            sos = butter(N=1, Wn=0.1, btype='lowpass', analog=False, fs=Nticks / (t1 - t0), output='sos')
+            sos = signal.butter(N=1, Wn=0.1, btype='lowpass', analog=False, fs=Nticks / (t1 - t0), output='sos')
             dst_m = dst_m.diff()
             dst_m.iloc[0] = 0
-            dst_m = sosfiltfilt(sos, dst_m)
+            dst_m = signal.sosfiltfilt(sos, dst_m)
             dst_u = dst_u.diff()
             dst_u.iloc[0] = 0
-            dst_u = sosfiltfilt(sos, dst_u)
+            dst_u = signal.sosfiltfilt(sos, dst_u)
             dst_b = dst_b.diff()
             dst_b.iloc[0] = 0
-            dst_b = sosfiltfilt(sos, dst_b)
-            # print(dst_m)
-            # print(type(dst_m))
-            # for df in [dst_m, dst_u, dst_b] :
-            #     df=df.diff()
-            #     df.iloc[0]=0
-            #     df = sosfiltfilt(sos, df)
+            dst_b = signal.sosfiltfilt(sos, dst_b)
         plot_mean_and_range(x=trange, mean=dst_m, lb=dst_b, ub=dst_u, axis=axs, color_mean=c,
                             color_shading=c, label=lab)
     axs.set_ylabel(ylab)
@@ -2183,18 +2271,22 @@ def plot_food_amount(datasets, labels, save_to=None, save_as=None, filt_amount=F
     return process_plot(fig, save_to, filename, return_fig)
 
 
-def plot_heatmap_PI(csv_filepath='PIs.csv', heatmap_filepath='PI_heatmap.pdf', return_fig=False):
+def plot_heatmap_PI(save_to, csv_filepath='PIs.csv', return_fig=False):
+    filename='PI_heatmap.pdf'
     print('Creating heatmap')
     new_data = pd.read_csv(csv_filepath, index_col=0)
-    gains = new_data.index.values
-    Ngains = len(gains)
-    # print(new_data.index.values)
-    # del new_data.index.name
+    new_data.sort_index(ascending=True, inplace=True)
+    new_data = new_data.reindex(sorted(new_data.columns, reverse=True), axis=1)
+    Lgains = new_data.index.values.astype(int)
+    Rgains = new_data.columns.values.astype(int)
+    Ngains = len(Lgains)
+
+
     grid_kws = {"height_ratios": (.9, .05), "hspace": 0.4}
-    fig, ax = plt.subplots(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(12, 10))
     sns.heatmap(new_data, annot=False, fmt="g", cmap='RdYlGn', vmin=-1, vmax=1, ax=ax,
                 cbar_kws={"orientation": "vertical",
-                          'label': 'Preference Index for left odor',
+                          'label': 'Preference for left odor',
                           'ticks': [1, 0, -1]})
     # ax.set_size_cm(3.5, 3.5)
     cax = plt.gcf().axes[-1]
@@ -2211,27 +2303,35 @@ def plot_heatmap_PI(csv_filepath='PIs.csv', heatmap_filepath='PI_heatmap.pdf', r
     # ax.set_xlabel(r'$V_{right}$')
     # ax.set_xlabel(r'Valence$_{right}$')
     # ax.set_xlabel('Right odor valence')
-    ax.xaxis.set_ticks_position('top')
+    # ax.xaxis.set_ticks_position('top')
     r = np.linspace(0.5, Ngains - 0.5, 5)
     ax.set_xticks(r)
     ax.set_yticks(r)
-    ax.set_xticklabels(gains[r.astype(int)])
-    ax.set_yticklabels(gains[r.astype(int)])
-    plt.subplots_adjust(left=0.15, right=0.95, bottom=0.15)
-    plt.savefig(heatmap_filepath, dpi=300)
-    print(f'Heatmap saved as {heatmap_filepath}')
+    # print(Rgains)
+    # print(Lgains)
+
+    # print(Lgains[r.astype(int)])
+    # print(Rgains[r.astype(int)])
+    ax.set_xticklabels(Lgains[r.astype(int)])
+    ax.set_yticklabels(Rgains[r.astype(int)])
+    plt.subplots_adjust(left=0.15, right=0.95, bottom=0.15, top=0.95)
+    return process_plot(fig, save_to, filename, return_fig)
 
 
 def plot_odor_concentration(datasets, labels=None, save_to=None, return_fig=False):
     return plot_timeplot('c_odor1', datasets=datasets, labels=labels, save_to=save_to, return_fig=return_fig)
 
+def plot_sensed_odor_concentration(datasets, labels=None, save_to=None, return_fig=False):
+    return plot_timeplot('dc_odor1', datasets=datasets, labels=labels, save_to=save_to, return_fig=return_fig)
+
 def plot_timeplot(par_short, datasets, labels=None, save_to=None, return_fig=False) :
-    if par_short not in par_db.index.to_list() :
-        raise ValueError (f'Parameter shortcut {par_short} does not exist in parameter database')
-    par_dict=par_db.loc[par_short]
+
+    par_dict= par_conf.get_par_dict(short=par_short)
     par=par_dict['par']
     sim_label=par_dict['symbol']
     xlabel=par_dict['unit']
+    ylim=par_dict['lim']
+    # ylim=gui.retrieve_value(par_dict['lim'], Tuple[float,float])
 
     d = datasets[0]
     s = d.step_data
@@ -2257,11 +2357,12 @@ def plot_timeplot(par_short, datasets, labels=None, save_to=None, return_fig=Fal
     axs.set_ylabel(xlabel)
     axs.set_xlabel('time, $sec$')
     axs.set_xlim([trange[0], trange[-1]])
+    if ylim is not None :
+        axs.set_ylim(ylim)
     # axs.legend(loc='upper right')
     axs.yaxis.set_major_locator(ticker.MaxNLocator(4))
-    # axs[1].set_xticks([0.5, 1, 10])
-    # axs[1].set_xticklabels(['0.5', '1', '10'])
-    plt.subplots_adjust(bottom=0.15, left=0.15, right=0.95, top=0.95)
+    plt.subplots_adjust(bottom=0.15, left=0.2, right=0.95, top=0.95)
+    # plt.show()
     return process_plot(fig, save_to, filename, return_fig)
 
 
@@ -2611,7 +2712,7 @@ def confidence_ellipse(x, y, ax, n_std=3.0, facecolor='none', **kwargs):
     # two-dimensionl dataset.
     ell_radius_x = np.sqrt(1 + pearson)
     ell_radius_y = np.sqrt(1 - pearson)
-    ellipse = mpatches.Ellipse((0, 0), width=ell_radius_x * 2, height=ell_radius_y * 2,
+    ellipse = patches.Ellipse((0, 0), width=ell_radius_x * 2, height=ell_radius_y * 2,
                                facecolor=facecolor, **kwargs)
 
     # Calculating the stdandard deviation of x from
@@ -2675,8 +2776,8 @@ def plot_ang_pars(datasets, labels, simVSexp=False, absolute=True, include_turns
     if include_turns:
         par_shorts += ['tur_fo']
         ranges += [100]
-    pars, sim_labels, exp_labels, xlabels = [
-        par_db[['par', 'symbol', 'exp_symbol', 'unit']].loc[par_shorts].values[:, k].tolist() for k in range(4)]
+
+    pars, sim_labels, exp_labels, xlabels = par_conf.par_dict_lists(shorts=par_shorts, to_return=['par', 'symbol', 'exp_symbol', 'unit'])
 
     filename = f'angular_pars_{len(pars)}.{suf}'
 
@@ -2721,8 +2822,7 @@ def plot_crawl_pars(datasets, labels, simVSexp=False, save_to=None, legend=False
     filename = f'crawl_pars.{suf}'
 
     par_shorts = ['str_N', 'str_tr', 'cum_d']
-    pars, sim_labels, exp_labels, xlabels = [
-        par_db[['par', 'symbol', 'exp_symbol', 'unit']].loc[par_shorts].values[:, k].tolist() for k in range(4)]
+    pars, sim_labels, exp_labels, xlabels = par_conf.par_dict_lists(shorts=par_shorts, to_return=['par', 'symbol', 'exp_symbol', 'unit'])
     ranges = [(100, 300), (0.5, 1.0), (80, 320)]
 
     if simVSexp:
@@ -2830,8 +2930,7 @@ def plot_endpoint_params(datasets, labels, mode='full', save_to=None, save_as=No
 
         ]
 
-    pars, sim_labels, exp_labels, xlabels = [
-        par_db[['par', 'symbol', 'exp_symbol', 'unit']].loc[par_shorts].values[:, k].tolist() for k in range(4)]
+    pars, sim_labels, exp_labels, xlabels = par_conf.par_dict_lists(shorts=par_shorts, to_return=['par', 'symbol', 'exp_symbol', 'unit'])
     pars = [p for p in pars if all([p in d.endpoint_data.columns for d in datasets])]
 
     if Ndatasets > 1:
@@ -2877,7 +2976,7 @@ def plot_endpoint_params(datasets, labels, mode='full', save_to=None, save_as=No
         axs[i].set_title(p, fontsize=15)
         axs[i].xaxis.set_major_locator(ticker.MaxNLocator(4))
         axs[i].yaxis.set_major_locator(ticker.MaxNLocator(4))
-        axs[i].xaxis.set_major_formatter(ScalarFormatter(useOffset=True, useMathText=True))
+        axs[i].xaxis.set_major_formatter(ticker.ScalarFormatter(useOffset=True, useMathText=True))
         # axs[i].ticklabel_format(axis='x', useMathText=True, scilimits=(-3, 3))
         # axs[i].ticklabel_format(axis='x', useMathText=True, scilimits=(-3, 3), useOffset=True)
 
@@ -2914,8 +3013,7 @@ def plot_turn_duration(datasets, labels, save_to=None, legend=False, absolute=Tr
     filename = f'turn_duration.{suf}'
 
     par_shorts = ['tur_fo', 'tur_t']
-    pars, sim_labels, exp_labels, units = [
-        par_db[['par', 'symbol', 'exp_symbol', 'unit']].loc[par_shorts].values[:, k].tolist() for k in range(4)]
+    pars, sim_labels, exp_labels, units = par_conf.par_dict_lists(shorts=par_shorts, to_return=['par', 'symbol', 'exp_symbol', 'unit'])
 
     fig, axs = plt.subplots(1, 1, figsize=(5, 5))
 
@@ -2947,8 +3045,9 @@ def plot_turns(datasets, labels, save_to=None, return_fig=False):
     fig, axs = plt.subplots(1, 1, figsize=(5, 5))
 
     par_short = 'tur_fo'
-    par, sim_label, exp_label, xlabel = [par_db[['par', 'symbol', 'exp_symbol', 'unit']].loc[par_short].values[k] for k
-                                         in range(4)]
+    par_dict= par_conf.get_par_dict(short=par_short)
+    par=par_dict['par']
+    xlabel=par_dict['unit']
 
     ts = []
     for d in datasets:
@@ -2971,6 +3070,7 @@ def plot_turns(datasets, labels, save_to=None, return_fig=False):
 
 
 def comparative_analysis(datasets, labels, simVSexp=False, save_to=None):
+    fig_dict={}
     warnings.filterwarnings('ignore')
     Ndatasets = len(datasets)
     if save_to is None:
@@ -2979,39 +3079,45 @@ def comparative_analysis(datasets, labels, simVSexp=False, save_to=None):
               'labels': labels,
               'save_to': save_to}
     for scaled in [True, False]:
-        plot_dispersion(**config, scaled=scaled, fig_cols=2)
-        plot_dispersion(**config, scaled=scaled, fig_cols=1)
-    plot_stride_Dbend(**config, show_text=False)
-    plot_stride_Dorient(**config, simVSexp=simVSexp, absolute=True)
-    plot_ang_pars(**config, simVSexp=simVSexp, absolute=True, include_turns=False, Npars=3)
+        for fig_cols in [1,2] :
+            s='scaled_' if scaled else ''
+            l=f'{s}dispersion_{fig_cols}'
+            fig_dict[l]=plot_dispersion(**config, scaled=scaled, fig_cols=fig_cols)
+
+    fig_dict['stride_Dbend']=plot_stride_Dbend(**config, show_text=False)
+    fig_dict['stride_Dorient']=plot_stride_Dorient(**config, simVSexp=simVSexp, absolute=True)
+    fig_dict['ang_pars']=plot_ang_pars(**config, simVSexp=simVSexp, absolute=True, include_turns=False, Npars=3)
     # plot_ang_pars(**config, simVSexp=simVSexp, absolute=True, include_turns=False, Npars=5, include_rear=True)
     # plot_ang_pars(**config, simVSexp=simVSexp, absolute=True, include_turns=False, Npars=5)
 
     for r in ['broad']:
         # for r in ['default', 'restricted', 'broad']:
-        plot_stridesNpauses(**config, plot_fits='all', time_unit='sec', range=r, only_fit_one=True)
-        plot_stridesNpauses(**config, plot_fits='best', time_unit='sec', range=r)
+        fig_dict[f'bout_fit_all_{r}']=plot_stridesNpauses(**config, plot_fits='all', time_unit='sec', range=r, only_fit_one=True)
+        fig_dict[f'bout_fit_best_{r}']=plot_stridesNpauses(**config, plot_fits='best', time_unit='sec', range=r)
     for mode in ['orientation', 'orientation_x2', 'bend', 'spinelength']:
         for agent_idx in [None, 0, 1]:
+            i='' if agent_idx is None else f'_{agent_idx}'
             try:
-                plot_interference(**config, mode=mode, agent_idx=agent_idx)
+                fig_dict[f'interference_{mode}{i}']=plot_interference(**config, mode=mode, agent_idx=agent_idx)
             except:
                 pass
     try:
-        calibration_plot(save_to=save_to)
+        fig_dict['calibration']=calibration_plot(save_to=save_to)
     except:
         pass
-    plot_crawl_pars(**config, simVSexp=simVSexp)
+    fig_dict['crawl_pars']=plot_crawl_pars(**config, simVSexp=simVSexp)
 
-    plot_turns(**config)
-    plot_turn_duration(**config)
+    fig_dict['turns']=plot_turns(**config)
+    fig_dict['turn_duration']=plot_turn_duration(**config)
 
+    # for mode in ['minimal']:
     for mode in ['minimal', 'limited', 'full']:
-        plot_endpoint_params(**config, mode=mode)
+        fig_dict[f'endpoint_{mode}']=plot_endpoint_params(**config, mode=mode)
     combine_pdfs(file_dir=save_to)
+    return fig_dict
 
 
-def dual_half_circle(center, radius, angle=0, ax=None, colors=('w', 'k'), **kwargs):
+def dual_half_circle(center, radius, angle=0, ax=None, colors=('W', 'k'), **kwargs):
     """
     Add two half circles to the axes *ax* (or the current axes) with the
     specified facecolors *colors* rotated at *angle* (in degrees).
@@ -3019,8 +3125,8 @@ def dual_half_circle(center, radius, angle=0, ax=None, colors=('w', 'k'), **kwar
     if ax is None:
         ax = plt.gca()
     theta1, theta2 = angle, angle + 180
-    w1 = Wedge(center, radius, theta1, theta2, fc=colors[0], **kwargs)
-    w2 = Wedge(center, radius, theta2, theta1, fc=colors[1], **kwargs)
+    w1 = patches.Wedge(center, radius, theta1, theta2, fc=colors[0], **kwargs)
+    w2 = patches.Wedge(center, radius, theta2, theta1, fc=colors[1], **kwargs)
     for wedge in [w1, w2]:
         ax.add_artist(wedge)
     return [w1, w2]
@@ -3029,7 +3135,7 @@ def dual_half_circle(center, radius, angle=0, ax=None, colors=('w', 'k'), **kwar
 def save_plot(fig, filepath, filename=None):
     fig.savefig(filepath, dpi=300, facecolor=None)
     # print(fig.get_size_inches(), filename)
-    fig.clear()
+    # fig.clear()
     plt.close(fig)
     if filename is not None:
         print(f'Plot saved as {filename}')
@@ -3072,8 +3178,9 @@ def plot_endpoint_scatter(datasets, labels, save_to=None, par_shorts=None, retur
     filepath = os.path.join(save_to, filename)
     for i, (p0, p1) in enumerate(pairs):
         ax = axs[i]
-        pars, sim_labels, exp_labels, units = [
-            par_db[['par', 'symbol', 'exp_symbol', 'unit']].loc[[p0, p1]].values[:, k].tolist() for k in range(4)]
+        pars, sim_labels, exp_labels, units = par_conf.par_dict_lists(shorts=[p0, p1],
+                                                                      to_return=['par', 'symbol', 'exp_symbol','unit'])
+
 
         v0_all = [d.endpoint_data[pars[0]].values for d in datasets]
         v1_all = [d.endpoint_data[pars[1]].values for d in datasets]
@@ -3091,6 +3198,7 @@ def plot_endpoint_scatter(datasets, labels, save_to=None, par_shorts=None, retur
         ax.set_ylim(v1_r)
         ax.ticklabel_format(useMathText=True, scilimits=(0, 0))
     save_plot(fig, filepath, filename)
+    return fig
 
 
 def plot_nengo(d, save_to=None):
@@ -3146,12 +3254,11 @@ def process_plot(fig, save_to, filename, return_fig):
     else:
         filepath = os.path.join(save_to, filename)
         save_plot(fig, filepath, filename)
-        return None
+        return fig
 
 
 def barplot(datasets, labels, par_shorts=['f_am'], coupled_labels=None, xlabel=None, ylabel=None, save_to=None,
-            save_as=None,
-            return_fig=False):
+            save_as=None, return_fig=False, show=False):
     Ndatasets, colors, save_to = plot_config(datasets, labels, save_to)
     w = 0.1
 
@@ -3171,8 +3278,8 @@ def barplot(datasets, labels, par_shorts=['f_am'], coupled_labels=None, xlabel=N
     else:
         filename = save_as
 
-    pars, sim_labels, exp_labels, units = [
-        par_db[['par', 'symbol', 'exp_symbol', 'unit']].loc[par_shorts].values[:, k].tolist() for k in range(4)]
+    pars, sim_labels, exp_labels, units = par_conf.par_dict_lists(shorts=par_shorts, to_return=['par', 'symbol', 'exp_symbol', 'unit'])
+
 
     # Pull the formatting out here
     bar_kwargs = {'width': w, 'color': colors, 'linewidth': 4, 'zorder': 5, 'align': 'center'}
@@ -3208,7 +3315,7 @@ def barplot(datasets, labels, par_shorts=['f_am'], coupled_labels=None, xlabel=N
             plt.xticks(ind, labels, color='k')
         else:
             plt.xticks(new_ind, coupled_labels, color='k')
-            plt.legend(handles=[mpatches.Patch(color=c, label=id) for c, id in zip(leg_cols, leg_ids)],
+            plt.legend(handles=[patches.Patch(color=c, label=id) for c, id in zip(leg_cols, leg_ids)],
                        labels=leg_ids, fontsize=20, loc='upper right', prop={'size': 10})
         if ylabel is None:
             plt.ylabel(u)
@@ -3217,6 +3324,8 @@ def barplot(datasets, labels, par_shorts=['f_am'], coupled_labels=None, xlabel=N
         plt.ylim(0, h)
         if xlabel is not None:
             plt.xlabel(xlabel)
+        if show :
+            plt.show()
         return process_plot(fig, save_to, filename, return_fig)
 
 
@@ -3273,4 +3382,26 @@ def calibration_plot(save_to=None, files=None):
         ax.imshow(im, cmap=None, aspect=None)
     filepath = os.path.join(save_to, filename)
     save_plot(fig, filepath, filename)
+    return fig
 
+
+
+graph_dict = {
+    'crawl_pars': plot_crawl_pars,
+    'angular_pars': plot_ang_pars,
+    'endpoint_params': plot_endpoint_params,
+    'stride_Dbend': plot_stride_Dbend,
+    'stride_Dorient': plot_stride_Dorient,
+    'interference': plot_interference,
+    'dispersion': plot_dispersion,
+    'stridesNpauses': plot_stridesNpauses,
+    'turn_duration': plot_turn_duration,
+    'turns': plot_turns,
+    'odor_concentration': plot_odor_concentration,
+    'sensed_odor_concentration': plot_sensed_odor_concentration,
+    'pathlength': plot_pathlength,
+    'food_amount': plot_food_amount,
+    'gut': plot_gut,
+    'barplot': barplot,
+    'deb': plot_debs,
+}

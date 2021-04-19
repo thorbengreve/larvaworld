@@ -2,7 +2,7 @@ import json
 
 import numpy as np
 from geneticalgorithm import geneticalgorithm as ga
-from lib.model.agents.deb import DEB
+from lib.model.deb import DEB
 from lib.stor.paths import Deb_path
 import lib.aux.functions as fun
 
@@ -132,7 +132,7 @@ for p, v in zip(pars, model.best_variable):
 for k, v in best.items():
     best[k]=fun.round2significant(v,4)
 
-with open(Deb_path, "w") as fp:
+with open(Deb_path, "W") as fp:
     json.dump(best, fp)
 
 for k, v in best.items():

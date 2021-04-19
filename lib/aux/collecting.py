@@ -3,7 +3,7 @@ import numpy as np
 from operator import attrgetter
 
 from mesa.datacollection import DataCollector
-from scipy.spatial.distance import euclidean
+# from scipy.spatial.distance import euclidean
 
 import lib.aux.functions as fun
 
@@ -54,6 +54,8 @@ lin_pars = {
 ang_pars = {
     "front_orientation_vel": 'front_orientation_vel',
     "bend": 'bend',
+    "body_bend_vel": 'body_bend_vel',
+    "body_bend_acc": 'body_bend_acc',
     # "torque": lambda a : a.torque,
     "torque": 'torque',
     "body_bend_errors": 'body_bend_errors',
@@ -63,6 +65,7 @@ effector_pars = {
     "first_odor_concentration": 'first_odor_concentration',
     "second_odor_concentration": 'second_odor_concentration',
     "olfactory_activation": 'olfactory_activation',
+    "first_odor_concentration_change": 'first_odor_concentration_change',
 
     "turner_activation": 'turner_activation',
     "turner_activity": 'ang_activity',
@@ -112,6 +115,7 @@ intermitter_pars = {
 
 deb_pars = {
     "deb_f": 'deb_f',
+    "deb_f_deviation": 'deb_f_deviation',
     "reserve": 'reserve',
     "reserve_density": 'reserve_density',
     "structural_length": 'structural_length',
@@ -199,8 +203,8 @@ class TargetedDataCollector(DataCollector):
 
     def generate_database(self, mode):
         if mode == 'step':
-            midline_xy = self.midline_xy_pars()
-            contour_xy = self.contour_xy_pars()
+            midline_xy = midline_xy_pars()
+            contour_xy = contour_xy_pars()
             full_step_database = {**midline_xy,
                                   **contour_xy,
                                   **step_database}
@@ -209,60 +213,39 @@ class TargetedDataCollector(DataCollector):
         elif mode == 'endpoint':
             return endpoint_database
 
-    def midline_xy_pars(self, N=12):
-        midline_xy = {}
-        points = ['head'] + [f'spinepoint_{i}' for i in np.arange(2, N, 1)] + ['tail']
-        for i, p in enumerate(points):
-            midline_xy.update(
-                {f'{p}_x': lambda a, i_bound=i: a.get_segment(i_bound).get_position()[
-                                                    0] * 1000 / a.model.scaling_factor,
-                 f'{p}_y': lambda a, i_bound=i: a.get_segment(i_bound).get_position()[
-                                                    1] * 1000 / a.model.scaling_factor,
-                 })
-        return midline_xy
 
-    def contour_xy_pars(self, N=22):
-        contour_xy = {}
-        contour = [f'contourpoint_{j}' for j in range(N)]
-        for j, c_point in enumerate(contour):
-            contour_xy.update(
-                {f'{c_point}_x': lambda a, j_bound=j: a.get_contour()[j_bound][0] * 1000 / a.model.scaling_factor,
-                 f'{c_point}_y': lambda a, j_bound=j: a.get_contour()[j_bound][1] * 1000 / a.model.scaling_factor,
-                 })
-        return contour_xy
+def midline_xy_pars(N=11):
+    midline_xy = {}
+    points = ['head'] + [f'seg{i}' for i in np.arange(2, N, 1)] + ['tail']
+    # points = ['head'] + [f'spinepoint_{i}' for i in np.arange(2, N, 1)] + ['tail']
+    for i, p in enumerate(points):
+        midline_xy.update(
+            {f'{p}_x': lambda a, i_bound=i: a.get_segment(i_bound).get_position()[
+                                                0] * 1000 / a.model.scaling_factor,
+             f'{p}_y': lambda a, i_bound=i: a.get_segment(i_bound).get_position()[
+                                                1] * 1000 / a.model.scaling_factor,
+             })
+    return midline_xy
 
 
-# step_db = {
-#     'f_am': lambda a: a.amount_eaten,
-#     'fee_N': lambda a: a.brain.feeder.iteration_counter,
-#     'pau_N': lambda a: a.brain.intermitter.pause_counter,
-#     'str_N': lambda a: a.brain.crawler.iteration_counter,
-#     'fee_tr': lambda a: a.brain.feeder.total_t / a.sim_time,
-#     'pau_tr': lambda a: a.brain.intermitter.cum_pause_dur / a.sim_time,
-#     'str_tr': lambda a: a.brain.crawler.total_t / a.sim_time,
-#     'chn0': lambda a: a.brain.intermitter.stridechain_start,
-#     'chn1': lambda a: a.brain.intermitter.stridechain_stop,
-#     'pau0': lambda a: a.brain.intermitter.pause_start,
-#     'pau1': lambda a: a.brain.intermitter.pause_stop,
-#     # 'fee_t': lambda a: a.feeder.total_t / a.sim_time,
-#     'pau_t': lambda a: a.brain.intermitter.pause_dur,
-#     'pau_id': lambda a: a.brain.intermitter.pause_id,
-#     # 'str_t': lambda a: a.crawler.total_t / a.sim_time,
-#     'chn_t': lambda a: a.brain.intermitter.stridechain_dur,
-#     'chn_id': lambda a: a.brain.intermitter.stridechain_id,
-#     'chn_l': lambda a: a.brain.intermitter.stridechain_length,
-#     # 'str0': lambda a: a.crawler.total_t / a.sim_time,
-#     # 'str1': lambda a: a.crawler.total_t / a.sim_time,
-# }
+def contour_xy_pars(N=22):
+    contour_xy = {}
+    contour = [f'contourpoint_{j}' for j in range(N)]
+    for j, c_point in enumerate(contour):
+        contour_xy.update(
+            {f'{c_point}_x': lambda a, j_bound=j: a.get_contour()[j_bound][0] * 1000 / a.model.scaling_factor,
+             f'{c_point}_y': lambda a, j_bound=j: a.get_contour()[j_bound][1] * 1000 / a.model.scaling_factor,
+             })
+    return contour_xy
 
-effector_collection = {
+
+output = {
     'intermitter': {
         'step': ['pause_id', 'pause_start', 'pause_stop', 'pause_dur'] + ['stridechain_id', 'stridechain_start',
                                                                           'stridechain_stop', 'stridechain_dur'],
         'endpoint': ['num_pauses', 'cum_pause_dur', 'pause_dur_ratio',
                      'num_stridechains', 'cum_stridechain_dur', 'stridechain_dur_ratio']},
-    'olfactor': {'step': ['first_odor_concentration', 'olfactory_activation',
-                          'turner_activation', 'turner_activity', 'torque', 'orientation_to_center'],
+    'olfactor': {'step': ['first_odor_concentration', 'olfactory_activation', 'first_odor_concentration_change'],
                  'endpoint': ['final_dispersion', 'final_scaled_dispersion',
                               'final_orientation_to_center', 'final_x']},
     'turner': {'step': ['turner_activation', 'turner_activity', 'torque'],
@@ -274,9 +257,11 @@ effector_collection = {
     'feeder': {
         'step': ['length', 'mass', 'amount_eaten', 'scaled_amount_eaten',
                  'explore2exploit_balance', 'filled_gut_ratio', 'amount_absorbed'],
-        'endpoint': ['length', 'mass', 'num_feeds', 'feed_success_rate', 'amount_eaten', 'scaled_amount_eaten',
+        'endpoint': ['length', 'mass', 'num_feeds',
+                     # 'feed_success_rate',
+                     'amount_eaten', 'scaled_amount_eaten',
                      'feed_dur_ratio', 'amount_absorbed']},
-    'deb': {'step': ['deb_f', 'reserve', 'reserve_density',
+    'deb': {'step': ['deb_f', 'deb_f_deviation',  'reserve', 'reserve_density',
                      # 'structural_length', 'maturity', 'reproduction','structure','age_in_days',
                      'hunger', 'puppation_buffer', 'cum_dst'],
             'endpoint': [
@@ -289,12 +274,38 @@ effector_collection = {
              'endpoint': ['length', 'cum_dur', 'final_x']},
     'nengo': {'step': ['crawler_activity', 'turner_activity', 'feeder_motion'],
               'endpoint': []},
-    'dst2center': {'step': ['dst_to_center', 'scaled_dst_to_center'],
+    'dst2center': {'step': [
+        'dispersion', 'scaled_dispersion',
+        'dst_to_center', 'scaled_dst_to_center', 'orientation_to_center'
+                            ],
                    'endpoint': ['final_dst_to_center', 'final_scaled_dst_to_center',
                                 'max_dst_to_center', 'max_scaled_dst_to_center']},
     'chemotax_dst': {'step': ['dst_to_chemotax_odor', 'scaled_dst_to_chemotax_odor'],
                      'endpoint': ['final_dst_to_chemotax_odor', 'final_scaled_dst_to_chemotax_odor']},
     'midline': None,
     'contour': None
-
 }
+
+
+
+
+
+
+output_keys = list(output.keys())
+#
+# print(len(list(step_database.keys())))
+# print(len(list(endpoint_database.keys())))
+# print([a for a in list(endpoint_database.keys()) if a not in list(step_database.keys())])
+#
+# s=[]
+# e=[]
+# for k, v in output.items() :
+#     if v is not None :
+#         s+=v['step']
+#         e+=v['endpoint']
+
+# s=fun.unique_list(s)
+# e=fun.unique_list(e)
+#
+# print(len(s))
+# print(len(e))

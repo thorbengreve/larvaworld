@@ -4,7 +4,7 @@ import argparse
 sys.path.insert(0, '..')
 from lib.stor.managing import build_datasets, analyse_datasets, visualize_datasets, enrich_datasets
 import lib.aux.argparsers as prs
-from lib.stor.datagroup import *
+from lib.conf.conf import *
 
 parser = argparse.ArgumentParser(description="Initialize processing")
 parser = prs.add_data_kwargs(parser)
@@ -37,9 +37,9 @@ if 'build' in actions :
 if 'enrich' in actions :
     enrich_datasets(DataGroup_id, **data_kwargs)
 if 'anal' in actions :
-    analyse_datasets(DataGroup_id, **data_kwargs)
+    fig_dict =analyse_datasets(DataGroup_id, **data_kwargs)
 if 'vis' in actions :
-    visualize_datasets(DataGroup_id, **data_kwargs, vis_kwargs = {**vis_kwargs, **replay_kwargs})
+    visualize_datasets(DataGroup_id, **data_kwargs, vis_kwargs = vis_kwargs, replay_kwargs=replay_kwargs)
 
 '''
 python process.py SampleGroup reg init

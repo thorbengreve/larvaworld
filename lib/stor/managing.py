@@ -1,14 +1,13 @@
-import sys
 import warnings
 from itertools import product
 import pandas as pd
 
-import numpy as np
 from distutils.dir_util import copy_tree
 
 from lib.anal.plotting import comparative_analysis, plot_marked_strides, plot_marked_turns
 from lib.stor.building import build_Jovanic, build_Schleyer
-from lib.stor.datagroup import *
+from lib.conf.conf import *
+from lib.stor.datagroup import LarvaDataGroup
 from lib.stor.larva_dataset import LarvaDataset
 
 
@@ -39,7 +38,7 @@ def build_datasets(datagroup_id, raw_folders=None, names=['raw'], folders=None, 
         step_data.sort_index(level=['Step', 'AgentID'], inplace=True)
         endpoint_data.sort_index(inplace=True)
         d.set_step_data(step_data)
-        d.set_endpoint_data(endpoint_data)
+        d.set_end_data(endpoint_data)
         d.save(food_endpoint_data=False)
         d.agent_ids = d.step_data.index.unique('AgentID').values
         d.num_ticks = d.step_data.index.unique('Step').size
@@ -116,10 +115,11 @@ def analyse_datasets(datagroup_id, save_to=None, sample_individuals=False, **kwa
                 plot_marked_turns(dataset=d, agent_ids=d.agent_ids[:1])
             except:
                 pass
-    comparative_analysis(datasets=ds, labels=[d.id for d in ds], save_to=save_to)
+    fig_dict = comparative_analysis(datasets=ds, labels=[d.id for d in ds], save_to=save_to)
+    return fig_dict
 
 
-def visualize_datasets(datagroup_id, save_to=None, save_as=None, vis_kwargs={}, **kwargs):
+def visualize_datasets(datagroup_id, save_to=None, save_as=None, vis_kwargs={},replay_kwargs={}, **kwargs):
     warnings.filterwarnings('ignore')
     ds = get_datasets(datagroup_id=datagroup_id, **kwargs)
     if save_to is None and len(ds) > 1:
@@ -127,7 +127,8 @@ def visualize_datasets(datagroup_id, save_to=None, save_as=None, vis_kwargs={}, 
     if save_as is None :
         save_as=[d.id for d in ds]
     for d,n in zip(ds, save_as):
-        d.visualize(save_to=save_to, save_as=n, **vis_kwargs)
+        vis_kwargs['media_name'] = n
+        d.visualize(save_to=save_to, vis_kwargs=vis_kwargs, **replay_kwargs)
 
 
 def compute_PIs(datagroup_id, save_to=None, **kwargs):
