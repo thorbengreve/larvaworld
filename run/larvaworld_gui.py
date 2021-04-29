@@ -12,7 +12,7 @@ from tkinter import *
 sys.path.insert(0, '..')
 
 from lib.gui.batch_tab import build_batch_tab, eval_batch, get_batch
-from lib.gui.gui_lib import SYMBOL_DOWN, SYMBOL_UP, on_image, off_image, check_collapsibles, check_toggles
+from lib.gui.gui_lib import check_collapsibles, check_toggles, w_kws
 from lib.gui.model_tab import build_model_tab, eval_model
 from lib.gui.simulation_tab import build_sim_tab, eval_sim, get_exp
 from lib.gui.analysis_tab import build_analysis_tab, eval_analysis
@@ -46,12 +46,18 @@ def run_gui():
     thread=None
     collapsibles={}
     graph_lists={}
-    dicts = {}
-    dicts['batch_kwargs']=None
-    l_anal, collapsibles, graph_lists, dicts = build_analysis_tab(collapsibles,graph_lists, dicts)
-    l_mod, collapsibles, dicts = build_model_tab(collapsibles, dicts)
-    l_sim, collapsibles, graph_lists, dicts = build_sim_tab(collapsibles, graph_lists, dicts)
-    l_batch, collapsibles, graph_lists, dicts = build_batch_tab(collapsibles, graph_lists, dicts)
+    dicts = {
+        'sim_results' : {'datasets' : []},
+        'batch_kwargs' : None,
+        'batch_results' : {},
+        'analysis_data' : {},
+    }
+
+
+    l_mod, collapsibles = build_model_tab(collapsibles)
+    l_sim, collapsibles, graph_lists = build_sim_tab(collapsibles, graph_lists)
+    l_batch, collapsibles, graph_lists = build_batch_tab(collapsibles, graph_lists)
+    l_anal, collapsibles, graph_lists, dicts = build_analysis_tab(collapsibles, graph_lists, dicts)
 
     l_gui = [
         [sg.TabGroup([[
@@ -62,7 +68,7 @@ def run_gui():
             key='ACTIVE_TAB', tab_location='top', selected_title_color='purple')]
     ]
 
-    w = sg.Window('Larvaworld gui', l_gui, resizable=True, finalize=True, size=(2000, 1200))
+    w = sg.Window('Larvaworld gui', l_gui, size=(1800, 1200), **w_kws,location=(300, 100))
 
     while True:
         e, v = w.read()
@@ -70,32 +76,18 @@ def run_gui():
             break
         check_collapsibles(w,e, collapsibles)
         check_toggles(w,e)
-        # if e.startswith('OPEN SEC'):
-        #     sec = e.split()[-1]
-        #     if collapsibles[sec].state is not None:
-        #         collapsibles[sec].state = not collapsibles[sec].state
-        #         W[e].update(SYMBOL_DOWN if collapsibles[sec].state else SYMBOL_UP)
-        #         W[f'SEC {sec}'].update(visible=collapsibles[sec].state)
-        # elif 'TOGGLE' in e:
-        #     if W[e].metadata.state is not None:
-        #         W[e].metadata.state = not W[e].metadata.state
-        #         W[e].update(image_data=on_image if W[e].metadata.state else off_image)
-
-        # else :
         for name,graph_list in graph_lists.items() :
             if e==graph_list.list_key :
                 graph_list.evaluate(w, v[graph_list.list_key])
 
+        if e.startswith('EDIT_TABLE'):
+            collapsibles[e.split()[-1]].edit_table(w)
 
         tab = v['ACTIVE_TAB']
         if tab == 'ANALYSIS_TAB':
             graph_lists, dicts = eval_analysis(e, v, w,collapsibles,graph_lists, dicts)
-                                                                                          # func, func_kwargs,
-                                                                                          # figure_agg, fig, save_to,
-                                                                                          # save_as,
-
         elif tab == 'MODEL_TAB':
-            dicts = eval_model(e, v, w, collapsibles, dicts)
+            eval_model(e, v, w, collapsibles)
         elif tab == 'BATCH_TAB':
             dicts, graph_lists = eval_batch(e, v, w, collapsibles, dicts, graph_lists)
         elif tab == 'SIMULATION_TAB':

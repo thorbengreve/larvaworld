@@ -545,7 +545,7 @@ class LarvaDataset:
             self.config['Nagents'] = self.Nagents
         except:
             pass
-        with open(self.config_file_path, "W") as fp:
+        with open(self.config_file_path, "w") as fp:
             json.dump(self.config, fp)
         # dict = {k: [v] for k, v in self.config.items()}
         # temp = pd.DataFrame.from_dict(dict)
@@ -2502,8 +2502,6 @@ class LarvaDataset:
                drop_immobile=False, mode='minimal', dispersion_starts=[0],
                ang_analysis=True, lin_analysis=True, bout_annotation=['turn', 'stride', 'pause'],
                is_last=True):
-        # print(self.config)
-        # raise
         if rescale_by is not None:
             self.rescale(scale=rescale_by, is_last=False)
         if drop_collisions:
@@ -2673,8 +2671,8 @@ class LarvaDataset:
             if not os.path.exists(i):
                 os.makedirs(i)
 
-    def analysis(self):
-        fig_dict = comparative_analysis(datasets=[self], labels=[self.id])
+    # def analysis(self):
+    #     fig_dict = comparative_analysis(datasets=[self], labels=[self.id])
 
     def store_pause_datasets(self, filepath):
         d = pd.read_csv(filepath, index_col=['AgentID', 'Chunk'])

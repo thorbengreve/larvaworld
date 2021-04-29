@@ -9,11 +9,11 @@ import lib.conf.data_conf as dat
 import lib.stor.paths as paths
 from lib.anal.plotting import *
 from lib.aux.collecting import output, midline_xy_pars
-from lib.conf.dtype_dicts import get_vis_kwargs_dict
 from lib.envs._larvaworld import LarvaWorldSim
 from lib.model.deb import deb_dict, deb_default
 from lib.conf.conf import loadConf
 from lib.stor.larva_dataset import LarvaDataset
+import lib.conf.dtype_dicts as dtypes
 
 
 def sim_enrichment(d, experiment):
@@ -25,6 +25,9 @@ def sim_enrichment(d, experiment):
         d.detect_turns(is_last=False)
     elif experiment == 'dispersion':
         d.enrich(length_and_centroid=False, is_last=False)
+    elif experiment in ['chemotaxis_local', 'chemotaxis_diffusion']:
+        d.angular_analysis(is_last=False)
+        d.detect_turns(track_params = ['orientation_to_center'],is_last=False)
     return d
 
 
@@ -43,8 +46,9 @@ def sim_analysis(d, exp_type):
         # print(cN, pN, fN)
         # cum_sd, f_success=e['cum_scaled_dst'].values, e['feed_success_rate'].values
         # print(cum_sd, f_success)
-        fig_dict['scatter_x4'] =plot_endpoint_scatter(datasets=[d], labels=[d.id], par_shorts=['cum_sd', 'f_am', 'str_tr', 'fee_tr'])
-        fig_dict['scatter_x2'] =plot_endpoint_scatter(datasets=[d], labels=[d.id], par_shorts=['cum_sd', 'f_am'])
+        fig_dict['scatter_x4'] = plot_endpoint_scatter(datasets=[d], labels=[d.id],
+                                                       par_shorts=['cum_sd', 'f_am', 'str_tr', 'fee_tr'])
+        fig_dict['scatter_x2'] = plot_endpoint_scatter(datasets=[d], labels=[d.id], par_shorts=['cum_sd', 'f_am'])
 
     elif exp_type in ['growth', 'rovers_sitters']:
         starvation_hours = d.config['starvation_hours']
@@ -59,65 +63,60 @@ def sim_analysis(d, exp_type):
             datasets = [d]
             labels = [d.id]
 
-
         cc = {'datasets': datasets,
               'labels': labels,
               'save_to': d.plot_dir}
-
-        fig_dict['gut'] =plot_gut(**cc)
-        fig_dict['food_amount'] =plot_food_amount(**cc)
-        fig_dict['food_amount_filt'] =plot_food_amount(filt_amount=True, **cc)
-        # raise
+        fig_dict['gut'] = plot_gut(**cc)
+        fig_dict['food_amount'] = plot_food_amount(**cc)
+        fig_dict['food_amount_filt'] = plot_food_amount(filt_amount=True, **cc)
         fig_dict['pathlength'] = plot_pathlength(scaled=False, **cc)
         fig_dict['endpoint'] = plot_endpoint_params(mode='deb', **cc)
         try:
-            fig_dict['food_amount_barplot'] =  barplot(par_shorts=['f_am'], **cc)
+            fig_dict['food_amount_barplot'] = barplot(par_shorts=['f_am'], **cc)
         except:
             pass
 
         deb_dicts = [deb_dict(d, id, starvation_hours=starvation_hours) for id in d.agent_ids] + [deb_model]
         c = {'save_to': d.plot_dir,
              'roversVSsitters': roversVSsitters}
-        c1={'deb_dicts' : deb_dicts[:-1],
-            'sim_only' : True}
+        c1 = {'deb_dicts': deb_dicts[:-1],
+              'sim_only': True}
 
-        for m in ['f', 'hunger', 'minimal', 'full', 'complete'] :
-            for t in ['hours', 'seconds'] :
-                for i,s in enumerate([True, False]) :
-                    l=f'{m}_{t}_{i}'
-                    save_as=f'{l}.pdf'
-                    fig_dict[l] = plot_debs(save_as=save_as, mode=m, time_unit=t,start_at_sim_start=s, **c, **c1)
+        for m in ['f', 'hunger', 'minimal', 'full', 'complete']:
+            for t in ['hours', 'seconds']:
+                for i, s in enumerate([True, False]):
+                    l = f'{m}_{t}_{i}'
+                    save_as = f'{l}.pdf'
+                    fig_dict[l] = plot_debs(save_as=save_as, mode=m, time_unit=t, start_at_sim_start=s, **c, **c1)
 
         for m in ['minimal', 'full', 'complete']:
             l = f'{m}_comp'
             save_as = f'{l}.pdf'
             fig_dict[l] = plot_debs(deb_dicts=deb_dicts, save_as=save_as, mode=m, **c)
 
-
-
-
-
     elif exp_type == 'dispersion':
         target_dataset = load_reference_dataset()
         datasets = [d, target_dataset]
         labels = ['simulated', 'empirical']
-        dic0=comparative_analysis(datasets=datasets, labels=labels, simVSexp=True, save_to=None)
+        dic0 = comparative_analysis(datasets=datasets, labels=labels, simVSexp=True, save_to=None)
         fig_dict.update(dic0)
-        dic1=plot_marked_strides(dataset=d, agent_ids=d.agent_ids[:3], title=' ', slices=[[10, 50], [60, 100]])
+        dic1 = plot_marked_strides(dataset=d, agent_ids=d.agent_ids[:3], title=' ', slices=[[10, 50], [60, 100]])
         fig_dict.update(dic1)
-        dic2=plot_marked_turns(dataset=d, agent_ids=d.agent_ids[:3], min_turn_angle=20)
+        dic2 = plot_marked_turns(dataset=d, agent_ids=d.agent_ids[:3], min_turn_angle=20)
         fig_dict.update(dic2)
 
 
     elif exp_type in ['chemotaxis_approach', 'chemotaxis_local', 'chemotaxis_diffusion']:
-        for p in ['c_odor1', 'dc_odor1', 'A_olf', 'A_tur', 'Act_tur'] :
-            fig_dict[p] =plot_timeplot(p, datasets=[d])
+        if exp_type in ['chemotaxis_local', 'chemotaxis_diffusion']:
+            fig_dict['turn_Dorient2center'] = plot_turn_Dorient2center(datasets=[d], labels=[d.id])
+        for p in ['c_odor1', 'dc_odor1', 'A_olf', 'A_tur', 'Act_tur']:
+            fig_dict[p] = plot_timeplot(p, datasets=[d])
         dic = plot_distance_to_source(dataset=d, exp_type=exp_type)
         fig_dict.update(dic)
-        vis_kwargs=get_vis_kwargs_dict(mode='image',image_mode='final',show_display=False,
-                                       random_colors=True, trajectories=True, trajectory_dt=0,
-                                       visible_clock=False, visible_scale=False, media_name='single_trajectory')
-        d.visualize(agent_ids=[d.agent_ids[0]], vis_kwargs = vis_kwargs)
+        vis_kwargs = dtypes.get_dict('visualization', mode='image', image_mode='final', show_display=False,
+                                         random_colors=True, trajectories=True, trajectory_dt=0,
+                                         visible_clock=False, visible_scale=False, media_name='single_trajectory')
+        d.visualize(agent_ids=[d.agent_ids[0]], vis_kwargs=vis_kwargs)
     elif exp_type in ['odor_preference', 'odor_preference_RL']:
         ind = d.compute_preference_index()
         print(ind)
@@ -127,27 +126,11 @@ def sim_analysis(d, exp_type):
         d.save_agent(pars=fun.flatten_list(d.points_xy) + fun.flatten_list(d.contour_xy), header=True)
     return fig_dict, results
 
-def init_sim(env_params):
-    env = LarvaWorldSim(env_params=env_params, vis_kwargs=get_vis_kwargs_dict(visible_clock=False, visible_state=False))
-    env.is_running = True
-    return env
-
-
-def configure_sim(env_params):
-    env = init_sim(env_params)
-    while env.is_running:
-        env.step()
-        env.render()
-    food_list = env.get_agent_list(class_name='Food')
-    border_list = env.get_agent_list(class_name='Border')
-    return food_list, border_list
-
-
 def run_sim_basic(
-        vis_kwargs,
         sim_params,
         env_params,
-        life_params={},
+        vis_kwargs=dtypes.get_dict('visualization'),
+        life_params=dtypes.get_dict('life'),
         collections=None,
         save_to=None,
         save_data_flag=True,
@@ -189,17 +172,16 @@ def run_sim_basic(
 
     collected_pars = collection_conf(dataset=d, collections=collections)
     env = LarvaWorldSim(id=id, dt=dt, Box2D=Box2D,
-                        # larva_pars=larva_pars,
                         env_params=env_params, collected_pars=collected_pars,
                         life_params=life_params, Nsteps=Nsteps,
                         save_to=d.vis_dir, experiment=experiment,
                         **kwargs, vis_kwargs=vis_kwargs)
     # Prepare the odor layer for a number of timesteps
-    odor_prep_time = 0.0
-    larva_prep_time = 0.5
-    env.prepare_odor_layer(int(odor_prep_time * 60 / env.dt))
+    # odor_prep_time = 0.0
+    # larva_prep_time = 0.5
+    # env.prepare_odor_layer(int(odor_prep_time * 60 / env.dt))
     # Prepare the flies for a number of timesteps
-    env.prepare_flies(int(larva_prep_time * 60 / env.dt))
+    # env.prepare_flies(int(larva_prep_time * 60 / env.dt))
     print(f'Initialized simulation {id}!')
 
     # Run the simulation
@@ -229,8 +211,8 @@ def run_sim_basic(
             d.save()
             fun.dict_to_file(param_dict, d.sim_pars_file_path)
             # Save the odor layer
-            if env.Nodors > 0:
-                env.plot_odorscape(save_to=d.plot_dir)
+            # if env.Nodors > 0:
+            #     env.plot_odorscape(save_to=d.plot_dir)
         print(f'Simulation completed in {dur} seconds!')
         res = d
     env.close()
@@ -285,7 +267,7 @@ def load_reference_dataset():
 #     return config
 
 
-def get_exp_conf(exp_type, sim_params, life_params=None, enrich=True, N=None):
+def get_exp_conf(exp_type, sim_params, life_params=None, enrich=True, N=None, larva_model=None):
     if life_params is None:
         life_params = {'starvation_hours': None,
                        'hours_as_larva': 0.0,
@@ -294,12 +276,18 @@ def get_exp_conf(exp_type, sim_params, life_params=None, enrich=True, N=None):
     env = exp_conf['env_params']
     if type(env) == str:
         env = loadConf(env, 'Env')
+
+    if N is not None:
+        for k in list(env['larva_params'].keys()):
+            env['larva_params'][k]['N'] = N
+    if larva_model is not None:
+        for k in list(env['larva_params'].keys()):
+            env['larva_params'][k]['model'] = larva_model
+
     for k, v in env['larva_params'].items():
         if type(v['model']) == str:
             v['model'] = loadConf(v['model'], 'Model')
-    if N is not None :
-        for k in list(env['larva_params'].keys()) :
-            env['larva_params'][k]['N'] = N
+
     exp_conf['env_params'] = env
     exp_conf['life_params'] = life_params
     exp_conf['sim_params'] = sim_params

@@ -25,7 +25,7 @@ from lib.aux.sampling import sample_agents, get_ref_bout_distros
 import lib.aux.functions as fun
 from lib.aux import naming as nam
 
-from lib.conf.dtype_dicts import agent_dtypes, life_dict
+import lib.conf.dtype_dicts as dtypes
 from lib.model import *
 from lib.model._agent import LarvaworldAgent
 from lib.sim.input_lib import evaluate_input, evaluate_graphs
@@ -390,7 +390,7 @@ class LarvaWorld:
             self.draw_arena(self._screen, background_motion)
 
         for o in self.get_food():
-            o.draw(self._screen, filled = True if o.amount > 0 else False)
+            o.draw(self._screen, filled=True if o.amount > 0 else False)
             o.id_box.draw(self._screen)
 
         for g in self.get_flies():
@@ -437,19 +437,21 @@ class LarvaWorld:
             self._create_food_grid(space_range=self.space_edges_for_screen,
                                    grid_pars=pars0['food_grid'])
         if pars0['source_groups'] is not None:
-            distro_pars = ['N', 'mode', 'loc', 'scale']
+            distro_pars = ['N', 'mode', 'shape', 'loc', 'scale']
             for group_id, group_pars in pars0['source_groups'].items():
-                N, mode, loc, scale = [group_pars[p] for p in distro_pars]
+                N, mode, shape, loc, scale = [group_pars[p] for p in distro_pars]
                 pars = {p: group_pars[p] for p in group_pars if p not in distro_pars}
-                food_positions = fun.generate_xy_distro(mode, N, loc, scale)
+                food_positions = fun.generate_xy_distro(mode, shape, N, loc, scale)
                 ids = [f'{group_id}_{i}' for i in range(N)]
                 for id, p in zip(ids, food_positions):
                     self.add_food(id=id, position=p, food_pars=pars)
+        # print(pars0['source_units'])
+        # raise
         for id, f_pars in pars0['source_units'].items():
+            # print(f_pars)
             position = f_pars['pos']
             f_pars.pop('pos')
             self.add_food(id=id, position=position, food_pars=f_pars)
-
 
     def add_food(self, position, id=None, food_pars={}):
         # if food_pars is None:
@@ -502,6 +504,12 @@ class LarvaWorld:
 
     def run(self, Nsteps=None):
         # pygame.init()
+        # import pygame_gui
+        # manager = pygame_gui.UIManager((800, 600))
+        # hello_button = pygame_gui.elements.UIButton(relative_rect=pygame.Rect((350, 275), (100, 50)),
+        #                                             text='Say Hello',
+        #                                             manager=manager)
+        # clock = pygame.time.Clock()
         self.is_running = True
         self.sim_paused = False
         if Nsteps is None:
@@ -509,6 +517,7 @@ class LarvaWorld:
         warnings.filterwarnings('ignore')
         with progressbar.ProgressBar(max_value=Nsteps) as bar:
             while self.is_running and self.Nticks < Nsteps and not self.end_condition_met:
+                # time_delta = clock.tick(60) / 1000.0
                 if not self.sim_paused:
                     self.step()
                     bar.update(self.Nticks)
@@ -519,7 +528,15 @@ class LarvaWorld:
                         self.render(tick=self.Nticks)
                         self.toggle(name='snapshot #')
                         self._screen.render()
-
+                # for event in pygame.event.get():
+                #     if event.type == pygame.USEREVENT:
+                #         if event.user_type == pygame_gui.UI_BUTTON_PRESSED:
+                #             if event.ui_element == hello_button:
+                #                 print('Hello World!')
+                #     manager.process_events(event)
+                # manager.update(time_delta)
+                # manager.draw_ui(self._screen)
+                # pygame.display.update()
                         # self._screen.close()
 
             if self.vis_kwargs['render']['image_mode'] == 'overlap':
@@ -577,10 +594,10 @@ class LarvaWorld:
                 if f.unique_id == 'Flag':
                     # print('ss')
                     self.flag = f
-                elif f.unique_id == 'Left base':
+                elif f.unique_id == 'Left_base':
                     # print('ssdd')
                     self.l_base = f
-                elif f.unique_id == 'Right base':
+                elif f.unique_id == 'Right_base':
                     # print('sssssa')
                     self.r_base = f
             self.l_base_p = self.l_base.get_position()
@@ -661,13 +678,14 @@ class LarvaWorld:
 
     def get_agent_list(self, class_name):
         global id
-        if class_name == 'Food':
+        if class_name == 'Source':
             agents = self.get_food()
         elif class_name in ['LarvaSim', 'LarvaReplay']:
             agents = self.get_flies()
         elif class_name == 'Border':
             agents = self.borders
-        pars = list(agent_dtypes[class_name].keys())
+        pars = list(dtypes.get_dict_dtypes('agent', class_name=class_name).keys())
+        # pars = list(agent_dtypes[class_name].keys())
         data = {}
         for f in agents:
             dic = {}
@@ -752,9 +770,6 @@ class LarvaWorldSim(LarvaWorld):
         super().__init__(id=id, **kwargs)
         if collected_pars is None:
             collected_pars = {'step': [], 'endpoint': []}
-        # self.available_pars = fun.unique_list([p for p in list(step_database.keys()) if par_conf.par_in_db(par=p)])
-        if life_params is None:
-            life_params = life_dict()
         self.starvation_hours = life_params['starvation_hours']
         if self.starvation_hours is None:
             self.starvation_hours = []
@@ -788,9 +803,9 @@ class LarvaWorldSim(LarvaWorld):
 
         self.set_end_condition()
 
-    def prepare_flies(self, timesteps):
-        for t in range(timesteps):
-            self.mock_step()
+    # def prepare_flies(self, timesteps):
+    #     for t in range(timesteps):
+    #         self.mock_step()
         #     # for g in self.get_flies():
         #     # if np.random.choice([0, 1]) == 0:
         #     #     g.compute_next_action()
@@ -832,11 +847,13 @@ class LarvaWorldSim(LarvaWorld):
         layers = {}
         odorscape = pars['odorscape']
         for i, (id, color) in enumerate(zip(odor_ids, odor_colors)):
+            od_sources = [f for f in sources if f.get_odor_id() == id]
+            temp = list(set([s.default_color for s in od_sources]))
+            default_color = temp[0] if len(temp) == 1 else color
             kwargs = {
-                # 'space': self.space,
                 'unique_id': id,
-                'sources': [f for f in sources if f.get_odor_id() == id],
-                'default_color': color,
+                'sources': od_sources,
+                'default_color': default_color,
                 'space_range': self.space_edges_for_screen,
             }
             if odorscape == 'Diffusion':
@@ -847,27 +864,27 @@ class LarvaWorldSim(LarvaWorld):
                                                  **kwargs)
             elif odorscape == 'Gaussian':
                 layers[id] = GaussianValueLayer(**kwargs)
-            # for f in layers[odor_id].sources:
-            #     f.set_default_color(layers[odor_id].color)
         return Nodors, layers
 
     def _generate_larva_pars(self, N, larva_pars, parameter_dict={}):
-        for dist in ['pause_dist', 'stridechain_dist']:
-            if larva_pars['neural_params']['intermitter_params'][dist] == 'fit':
-                larva_pars['neural_params']['intermitter_params'][dist] = get_ref_bout_distros(dist)
+        if larva_pars['neural_params']['intermitter_params']:
+            for dist in ['pause_dist', 'stridechain_dist']:
+                if larva_pars['neural_params']['intermitter_params'][dist] == 'fit':
+                    larva_pars['neural_params']['intermitter_params'][dist] = get_ref_bout_distros(dist)
         flat_larva_pars = fun.flatten_dict(larva_pars)
         sample_pars = [p for p in flat_larva_pars if flat_larva_pars[p] == 'sample']
         if len(sample_pars) >= 1:
             pars, samples = sample_agents(pars=sample_pars, N=N)
 
-        all_larva_pars = []
-        for i in range(N):
-            l = copy.deepcopy(larva_pars)
-            flat_l = fun.flatten_dict(l)
-            for p, s in zip(pars, samples):
-                flat_l.update({p: s[i]})
-            l = unflatten(flat_l)
-            all_larva_pars.append(l)
+            all_larva_pars = []
+            for i in range(N):
+                l = copy.deepcopy(larva_pars)
+                flat_l = fun.flatten_dict(l)
+                for p, s in zip(pars, samples):
+                    flat_l.update({p: s[i]})
+                all_larva_pars.append(unflatten(flat_l))
+        else :
+            all_larva_pars=[larva_pars]*N
 
         for k, vs in parameter_dict.items():
             for l, v in zip(all_larva_pars, vs):
@@ -875,23 +892,16 @@ class LarvaWorldSim(LarvaWorld):
         return all_larva_pars
 
     def create_larvae(self, larva_pars, parameter_dict={}):
-
         for group_id, group_pars in larva_pars.items():
-            N, mode, loc, scale, orientation_range, larva_model, col = [group_pars[p] for p in
-                                                                  ['N', 'mode', 'loc', 'scale', 'orientation_range', 'model',
-                                                                   'default_color']]
-            # if type(larva_model) == str:
-            #     larva_model = loadConf(larva_model, 'Model')
-            # print(larva_model['neural_params']['memory_params'])
-            # raise
-            a1, a2 = np.deg2rad(orientation_range)
+            N=group_pars['N']
+            a1, a2 = np.deg2rad(group_pars['orientation_range'])
             orientations = np.random.uniform(low=a1, high=a2, size=N).tolist()
-            positions = fun.generate_xy_distro(mode, N, loc, scale)
-            all_pars = self._generate_larva_pars(N, larva_model, parameter_dict=parameter_dict)
-            ids = [f'{group_id}_{i}' for i in range(N)]
+            positions = fun.generate_xy_distro(N=N, **{k:group_pars[k] for k in ['mode', 'shape', 'loc', 'scale']})
+            all_pars = self._generate_larva_pars(N, group_pars['model'], parameter_dict=parameter_dict)
 
-            for i, (p, o, id, pars) in enumerate(zip(positions, orientations, ids, all_pars)):
-                self.add_larva(position=p, orientation=o, id=id, pars=pars, group=group_id, default_color=col)
+            for i, (p, o, pars) in enumerate(zip(positions, orientations, all_pars)):
+                self.add_larva(position=p, orientation=o, id=f'{group_id}_{i}', pars=pars, group=group_id,
+                               default_color=group_pars['default_color'])
                 # print(pars['neural_params']['olfactor_params'])
                 # print(i, pars['neural_params']['olfactor_params']['odor_dict']['CS']['mean'])
             # raise
@@ -932,19 +942,19 @@ class LarvaWorldSim(LarvaWorld):
         self.check_end_condition()
         # self.table_collector.add_table_row(table_name='Torque', )
 
-    def mock_step(self):
-        for id, layer in self.odor_layers.items():
-            layer.update_values()  # Currently doing something only for the DiffusionValueLayer
-        for i, g in enumerate(self.get_flies()):
-            if np.random.choice([0, 1]) == 0:
-                # p,o=g.get_midpoint_position()
-                # FIXME now preparing only turner
-                # g.compute_next_action()
-                # g.step()
-                try:
-                    g.turner.step()
-                except:
-                    pass
+    # def mock_step(self):
+    #     for id, layer in self.odor_layers.items():
+    #         layer.update_values()  # Currently doing something only for the DiffusionValueLayer
+    #     for i, g in enumerate(self.get_flies()):
+    #         if np.random.choice([0, 1]) == 0:
+    #             # p,o=g.get_midpoint_position()
+    #             # FIXME now preparing only turner
+    #             # g.compute_next_action()
+    #             # g.step()
+    #             try:
+    #                 g.turner.step()
+    #             except:
+    #                 pass
 
     # update trajectories
     def update_trajectories(self, flies):

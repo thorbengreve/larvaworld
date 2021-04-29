@@ -1,3 +1,4 @@
+import time
 from copy import deepcopy
 import numpy as np
 from Box2D import Box2D, b2ChainShape
@@ -30,9 +31,7 @@ class LarvaworldAgent:
         self.default_color = default_color
         self.color = self.default_color
         self.radius = radius
-
         self.id_box = self.init_id_box()
-
         self.odor_id = odor_id
         self.odor_intensity = odor_intensity
         if odor_spread is None:
@@ -43,6 +42,7 @@ class LarvaworldAgent:
         self.carried_objects = []
         self.can_be_carried = can_be_carried
         self.is_carried_by = None
+        # print(self.get_odor_id(), self.group)
 
     def get_position(self):
         return tuple(self.pos)
@@ -215,11 +215,11 @@ class Larva(LarvaworldAgent):
 
     @property
     def dst_to_center_in_mm(self):
-        return euclidean(tuple(self.pos), (0, 0)) * 1000 / self.model.scaling_factor
+        return np.sqrt(np.sum(np.array(self.pos)**2)) * 1000 / self.model.scaling_factor
 
     @property
     def scaled_dst_to_center(self):
-        return euclidean(tuple(self.pos), (0, 0)) / self.get_sim_length()
+        return np.sqrt(np.sum(np.array(self.pos)**2)) / self.get_sim_length()
 
     @property
     def dst_to_chemotax_odor_in_mm(self):
@@ -233,15 +233,21 @@ class Larva(LarvaworldAgent):
 
     @property
     def max_dst_to_center_in_mm(self):
-        return np.nanmax([euclidean(tuple(self.trajectory[i]),
-                                    (0.0, 0.0)) for i in
-                          range(len(self.trajectory))]) * 1000 / self.model.scaling_factor
+        return np.nanmax(np.sqrt(np.sum(np.array(self.trajectory)**2, axis=1))) * 1000/ self.model.scaling_factor
 
     @property
     def max_scaled_dst_to_center(self):
-        return np.nanmax([euclidean(tuple(self.trajectory[i]),
-                                    (0.0, 0.0)) for i in
-                          range(len(self.trajectory))]) / self.get_sim_length()
+        d = np.nanmax(np.sqrt(np.sum(np.array(self.trajectory)**2, axis=1)))/ self.get_sim_length()
+        return d
+
+    @property
+    def mean_dst_to_center_in_mm(self):
+        return np.nanmean(np.sqrt(np.sum(np.array(self.trajectory)**2, axis=1)))* 1000 / self.model.scaling_factor
+
+    @property
+    def mean_scaled_dst_to_center(self):
+        d = np.nanmean(np.sqrt(np.sum(np.array(self.trajectory)**2, axis=1)))/ self.get_sim_length()
+        return d
 
     @property
     def dispersion_max_in_mm(self):
@@ -424,16 +430,10 @@ class Larva(LarvaworldAgent):
         return self.brain.intermitter.EEB
 
 
-class Food(LarvaworldAgent):
-    def __init__(self, amount=1.0, quality=1.0,default_color=None, shape_vertices=None, **kwargs):
-        if default_color is None :
-            default_color = 'green'
-        super().__init__(default_color=default_color,**kwargs)
+class Source(LarvaworldAgent):
+    def __init__(self, shape_vertices=None, shape='circle', **kwargs):
+        super().__init__(**kwargs)
         self.shape_vertices = shape_vertices
-        self.initial_amount = amount
-        self.quality = quality
-        self.amount = self.initial_amount
-
         shape = fun.circle_to_polygon(60, self.radius)
 
         if self.model.physics_engine:
@@ -443,27 +443,13 @@ class Food(LarvaworldAgent):
             #     self._body: Box2D.b2Body = self.space.CreateDynamicBody(pos=self.pos, orientation=None)
             #     # super().__init__(space=self.space, pos=self.pos, orientation=None, radius=self.shape_radius)
             #     self._body.bullet = True
-            self.food_shape = b2ChainShape(vertices=shape.tolist())
-            self._body.CreateFixture(shape=self.food_shape)
+            self.Box2D_shape = b2ChainShape(vertices=shape.tolist())
+            self._body.CreateFixture(shape=self.Box2D_shape)
             self._body.fixtures[0].filterData.groupIndex = -1
         else:
             self.model.space.place_agent(self, self.pos)
         # # put all agents into same group (negative so that no collisions are detected)
         # self._fixtures[0].filterData.groupIndex = -1
-
-    def get_amount(self):
-        return self.amount
-
-    def subtract_amount(self, amount):
-        prev_amount = self.amount
-        self.amount -= amount
-        if self.amount <= 0.0:
-            self.amount = 0.0
-            self.model.delete_agent(self)
-        else:
-            r = (self.initial_amount - self.amount) / self.initial_amount
-            self.color = r * np.array((255, 255, 255)) + (1 - r) * self.default_color
-        return np.min([amount, prev_amount])
 
     def get_vertices(self):
         v0=self.shape_vertices
@@ -483,3 +469,46 @@ class Food(LarvaworldAgent):
             p0 = Polygon(self.get_vertices())
             p = affinity.scale(p0, xfact=scale, yfact=scale)
             return p
+
+class Food(Source):
+    def __init__(self, amount=1.0, quality=1.0,default_color=None, **kwargs):
+        if default_color is None :
+            default_color = 'green'
+        super().__init__(default_color=default_color,**kwargs)
+        self.initial_amount = amount
+        self.quality = quality
+        self.amount = self.initial_amount
+
+    def get_amount(self):
+        return self.amount
+
+    def subtract_amount(self, amount):
+        prev_amount = self.amount
+        self.amount -= amount
+        if self.amount <= 0.0:
+            self.amount = 0.0
+            self.model.delete_agent(self)
+        else:
+            r = (self.initial_amount - self.amount) / self.initial_amount
+            self.color = r * np.array((255, 255, 255)) + (1 - r) * self.default_color
+        return np.min([amount, prev_amount])
+
+    def draw(self, viewer, filled=True):
+        # if self.get_shape() is None :
+        #     return
+        p, c, r = self.get_position(), self.color, self.radius
+        # viewer.draw_polygon(self.get_shape().boundary.coords, c, filled, r/5)
+        viewer.draw_circle(p, r, c, filled, r / 5)
+
+        if self.odor_intensity > 0:
+            # viewer.draw_polygon(self.get_shape(1.5).boundary.coords, c, False, r / 10)
+            # viewer.draw_polygon(self.get_shape(2.0).boundary.coords, c, False, r / 15)
+            # viewer.draw_polygon(self.get_shape(3.0).boundary.coords, c, False, r / 20)
+            viewer.draw_circle(p, r * 1.5, c, False, r / 10)
+            viewer.draw_circle(p, r * 2.0, c, False, r / 15)
+            viewer.draw_circle(p, r * 3.0, c, False, r / 20)
+        if self.selected:
+            # viewer.draw_polygon(self.get_shape(1.1).boundary.coords, self.model.selection_color, False, r / 5)
+            viewer.draw_circle(p, r * 1.1, self.model.selection_color, False, r / 5)
+
+

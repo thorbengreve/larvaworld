@@ -1,9 +1,6 @@
-import math
-
 import numpy as np
-from mesa.space import ContinuousSpace
 from scipy.ndimage.filters import gaussian_filter
-
+import lib.aux.functions as fun
 
 class ValueGrid:
     def __init__(self, unique_id, space_range, grid_dims=[50, 50], distribution='uniform',visible=False,
@@ -13,6 +10,8 @@ class ValueGrid:
         self.initial_value = initial_value
         self.max_value = max_value
         self.min_value = min_value
+        if type(default_color) == str:
+            default_color = fun.colorname2tuple(default_color)
         self.default_color = default_color
         self.grid_dims = grid_dims
         self.X, self.Y = grid_dims

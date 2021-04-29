@@ -1,11 +1,13 @@
 import sys
 import numpy as np
 
-from lib.conf.dtype_dicts import get_vis_kwargs_dict
+from lib.conf.conf import loadConfDict
 
 sys.path.insert(0, '../../..')
 import lib.conf.env_conf as env
 import lib.aux.functions as fun
+import lib.conf.dtype_dicts as dtypes
+
 
 
 def add_vis_kwargs(parser):
@@ -49,7 +51,7 @@ def get_vis_kwargs(args):
         trajectories = True
         trajectory_dt = args.trajectories
 
-    vis_kwargs = get_vis_kwargs_dict(mode=mode, image_mode=args.image_mode, video_speed=video_speed,
+    vis_kwargs = dtypes.get_dict('visualization', mode=mode, image_mode=args.image_mode, video_speed=video_speed,
                                      show_display=args.show_display, media_name=args.media_name,
                                      draw_head=args.draw_head, draw_centroid=args.draw_centroid,
                                      draw_midline=args.draw_midline, draw_contour=args.draw_contour,
@@ -284,11 +286,13 @@ def get_space_kwargs(args):
 
 def add_place_kwargs(parser):
     parser.add_argument('-N', '--Nagents', type=int, help='The number of simulated larvae')
+    parser.add_argument('-M', '--larva_model', choices=list(loadConfDict('Model').keys()), help='The larva model to use')
     return parser
 
 
 def get_place_kwargs(args):
     place_kwargs = {
         'N': args.Nagents,
+        'larva_model': args.larva_model,
     }
     return place_kwargs
