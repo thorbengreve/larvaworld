@@ -129,7 +129,7 @@ def olfactor_conf(ids=['Odor'], means=[150.0], stds=None, noise=0.0):
                              'std': s}
         return odor_dict
 
-    odor_dict = None if ids is None else new_odor_dict(ids, means, stds)
+    odor_dict = {} if ids is None else new_odor_dict(ids, means, stds)
     return {
         'odor_dict': odor_dict,
         'perception': 'log',
@@ -428,6 +428,13 @@ nengo_larva = {'energetics_params': None,
 
 odors3 = [f'{source}_odor' for source in ['Flag', 'Left_base', 'Right_base']]
 odors5 = [f'{source}_odor' for source in ['Flag', 'Left_base', 'Right_base', 'Left', 'Right']]
+odors2 = [f'{source}_odor' for source in ['Left', 'Right']]
+
+follower_R = {**odor_larva_conf(ids=odors2, means=[150.0, 0.0],
+                                  odor_id='Right_odor', odor_intensity=300.0, odor_spread=0.02)}
+
+follower_L = {**odor_larva_conf(ids=odors2, means=[0.0, 150.0],
+                                  odor_id='Left_odor', odor_intensity=300.0, odor_spread=0.02)}
 
 king_larva_R = {**odor_larva_conf(ids=odors5, means=[150.0, 0.0, 0.0, 0.0, 0.0],
                                   odor_id='Right_odor', odor_intensity=2.0, odor_spread=0.00005)}

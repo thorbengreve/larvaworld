@@ -8,9 +8,11 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib import cm, transforms, ticker, patches
+from matplotlib.patches import Patch
 from mpl_toolkits.mplot3d import Axes3D
 import statsmodels.api as sm
-from scipy import stats, signal
+from scipy import stats, signal, interpolate
+from scipy.stats import ttest_ind
 from sklearn.linear_model import LinearRegression
 import powerlaw as pow
 from PIL import Image
@@ -25,13 +27,13 @@ from lib.stor.paths import DebFolder
 '''
 Generic plot function. Uses the next two functions internally'''
 
-plt_conf = {'axes.labelsize': 20,
+plt_conf = {'axes.labelsize': 22,
             'axes.titlesize': 25,
             'figure.titlesize': 30,
             'xtick.labelsize': 20,
             'ytick.labelsize': 20,
-            'legend.fontsize': 15,
-            'legend.title_fontsize': 15}
+            'legend.fontsize': 20,
+            'legend.title_fontsize': 20}
 plt.rcParams.update(plt_conf)
 suf = 'pdf'
 
@@ -64,14 +66,14 @@ def plot_dataset(save_to, save_as=None, mode='time', subplot_structure=[1, 1],
                  legendtitlesize=20, draw_y0=False, log=False,
                  title=None, log_yscale=False, xlim=None, ylim=None, xlabel=None, ylabel=None,
                  sharex=False, sharey=False, **kwargs):
-    plot_config = {'axes.labelsize': labelsize,
-                   'axes.titlesize': titlesize,
-                   'figure.titlesize': figtitlesize,
-                   'xtick.labelsize': ticksize,
-                   'ytick.labelsize': ticksize,
-                   'legend.fontsize': legendsize,
-                   'legend.title_fontsize': legendtitlesize}
-    plt.rcParams.update(plot_config)
+    # plot_config = {'axes.labelsize': labelsize,
+    #                'axes.titlesize': titlesize,
+    #                'figure.titlesize': figtitlesize,
+    #                'xtick.labelsize': ticksize,
+    #                'ytick.labelsize': ticksize,
+    #                'legend.fontsize': legendsize,
+    #                'legend.title_fontsize': legendtitlesize}
+    # plt.rcParams.update(plot_config)
     fig, axs = plt.subplots(subplot_structure[0], subplot_structure[1], sharex=sharex, sharey=sharey, figsize=figsize)
 
     N = subplot_structure[0] * subplot_structure[1]
@@ -412,7 +414,7 @@ def time_plot(fig, axs, data, agent_ids, parameters, dt=None, Nsubplots=1,
                 else:
                     patch = [patches.Patch(color=color, label=name) for name, color in
                              zip(legend_labels, colors)]
-                plt.legend(handles=patch, loc='upper right', prop={'size': 15})
+                plt.legend(handles=patch, loc='upper right')
             for i, (chunk, color) in enumerate(zip(background_for_chunks, colors)):
                 start_flag = f'{chunk}_start'
                 stop_flag = f'{chunk}_stop'
@@ -730,45 +732,58 @@ def plot_marked_strides(dataset, agent_ids=None, title=' ', show_legend=True, sh
 
     dir = 'epochs'
     save_to = os.path.join(d.plot_dir, dir)
-    xx = 'marked_strides'
+    xxx = 'marked_strides'
     this_suf = 'pdf'
-
-    filepath_full = f'{xx}_full.{this_suf}'
-    filepath_full_long = f'{xx}_full_long.{this_suf}'
-    filepath_slices = []
-    for i, slice in enumerate(slices):
-        filepath_slices.append(f'{xx}_slice_{i}.{this_suf}')
-    generic_filepaths = [filepath_full_long, filepath_full] + filepath_slices
 
     figsize_short = (20, 5)
     figsize_long = (15 * 6 * 3, 5)
-    figsizes = [figsize_long, figsize_short] + [figsize_short] * len(generic_filepaths)
 
-    xlims = [None, None] + slices
+    par_shorts = ['sv']
+    # par_shorts = ['sv', 'fov']
+    pars, symbols, exp_symbols, ylabels, ylims = par_conf.par_dict_lists(shorts=par_shorts,
+                                                                         to_return=['par', 'symbol', 'exp_symbol',
+                                                                                    'unit', 'lim'])
 
-    ymax = 1.0
+    for sh, p, s, l, lim in zip(par_shorts, pars, symbols, ylabels, ylims) :
+        xx=f'{xxx}_{sh}'
+        filepath_full = f'{xx}_full.{this_suf}'
+        filepath_full_long = f'{xx}_full_long.{this_suf}'
+        filepath_slices = []
+        for i, slice in enumerate(slices):
+            filepath_slices.append(f'{xx}_slice_{i}.{this_suf}')
+        generic_filepaths = [filepath_full_long, filepath_full] + filepath_slices
 
-    dst = nam.scal('dst')
-    v = nam.scal('vel')
 
-    fig_dict = {}
-    for agent_id in agent_ids:
-        filepaths = [f'{agent_id}_{f}' for f in generic_filepaths]
-        for i, (figsize, filepath, xlim) in enumerate(zip(figsizes, filepaths, xlims)):
-            try:
-                fig = d.plot_step_data(parameters=[v], mode='time', figsize=figsize, agent_ids=[agent_id],
-                                       ylabel=r'scal velocity, $v (sec^{-1})$', xlabel=r'time, $(sec)$', title=title,
+        figsizes = [figsize_long, figsize_short] + [figsize_short] * len(generic_filepaths)
+
+        xlims = [None, None] + slices
+
+
+
+    # ymax = 1.0
+
+
+    # dst = nam.scal('dst')
+    # v = nam.scal('vel')
+
+        fig_dict = {}
+        for agent_id in agent_ids:
+            filepaths = [f'{agent_id}_{f}' for f in generic_filepaths]
+            for i, (figsize, filepath, xlim) in enumerate(zip(figsizes, filepaths, xlims)):
+                # try:
+                fig = d.plot_step_data(parameters=[p], mode='time', figsize=figsize, agent_ids=[agent_id],
+                                       ylabel=l, xlabel=r'time $(sec)$', title=title,
                                        show_legend=show_legend,
                                        xlim=xlim,
-                                       # ylim=[0.0, ymax],
+                                       ylim=lim,
                                        background_flags=[nam.id('stride')],
                                        background_for_chunks=['stride', 'non_stride'],
                                        legend_labels=['stride', 'pause'],
-                                       marker_params=[nam.max(v), nam.min(v)],
+                                       marker_params=[nam.max(p), nam.min(p)] if sh=='sv' else None,
                                        save_to=save_to, save_as=filepath)
-                fig_dict[f'strides_{agent_id}_{i}'] = fig
-            except:
-                pass
+                fig_dict[f'{xx}_{agent_id}_{i}'] = fig
+                # except:
+                #     pass
     return fig_dict
 
 
@@ -880,7 +895,7 @@ def plot_marked_turns(dataset, agent_ids=None, turn_epochs=['Rturn', 'Lturn'],
             par_legend = plt.legend(handles, labels, loc=2)
             plt.legend(epoch_handles, turn_epochs, loc=1)
             plt.gca().add_artist(par_legend)
-            plt.subplots_adjust(hspace=0.05, top=0.96, bottom=0.15, left=0.06, right=0.95)
+            plt.subplots_adjust(hspace=0.05, top=0.95, bottom=0.2, left=0.08, right=0.92)
             fig.savefig(f'{save_to}/{filepath}', dpi=300)
             print(f'Image saved as {filepath}')
             fig_dict[f'turns_{agent_id}_{i}'] = fig
@@ -1245,7 +1260,7 @@ def plot_debs(deb_dicts=None, save_to=None, save_as=None, mode='full', roversVSs
                 r'reserve density $(-)$', r'hunger drive $(-)$',
                 r'pupation buffer $(-)$', r'explore2exploit_balance $(-)$',
                 r'functional response $(-)$', ]
-    print(mode)
+    # print(mode)
     if mode == 'minimal':
         idx = [2, 4, 5, 6]
     elif mode == 'full':
@@ -1364,6 +1379,8 @@ def plot_debs(deb_dicts=None, save_to=None, save_as=None, mode='full', roversVSs
     axs[0].legend(handles=[patches.Patch(color=c, label=id) for c, id in zip(leg_cols, leg_ids)],
                   labels=leg_ids, fontsize=20, loc='upper left', prop={'size': 15})
     fig.subplots_adjust(top=0.95, bottom=0.2, left=0.1, right=0.93, hspace=0.02)
+    # plt.show()
+    # raise
     return process_plot(fig, save_to, save_as, return_fig)
 
 
@@ -2068,7 +2085,7 @@ def plot_interference(datasets, labels, mode='orientation', agent_idx=None, save
     fig, axs = plt.subplots(len(pars), 1, figsize=(10, len(pars) * 5), sharex=True)
     axs = axs.ravel()
 
-    ang_ylim = [0, 60] if mode in ['bend', 'orientation'] else None
+    ang_ylim = [0, 60] if mode in ['bend', 'orientation', 'orientation_x2'] else None
 
     if agent_idx is not None:
         data = [[d.load_chunk_dataset(chunk='stride', parameter=p).loc[d.agent_ids[agent_idx]].values for p in pars] for
@@ -2087,7 +2104,7 @@ def plot_interference(datasets, labels, mode='orientation', agent_idx=None, save
             axs[i].legend(loc='upper right')
             axs[i].set_ylabel(u)
             ylim = ang_ylim if i != 0 else [0.0, 0.6]
-            axs[i].set_ylim(ymin=0.0)
+            # axs[i].set_ylim(ymin=0.0)
             axs[i].set_ylim(ylim)
 
     Nticks = 5
@@ -2631,10 +2648,10 @@ def plot_vel_during_strides(dataset, use_component=False, save_to=None, return_f
     # lin_cs = ['darkred', 'red', 'lightsalmon']
     ang_cs = ['black']
     cs = [lin_cs, ang_cs]
-    lin_labels = [r'$\bf{head}$', r'$\bf{midpoint}$', r'$\bf{tail}$']
+    lin_labels = [r'$\bf{head}$', r'$\bf{mid}$', r'$\bf{tail}$']
     ang_labels = [r'$\dot{\theta}_{or}$']
     labels = [lin_labels, ang_labels]
-    ylabels = ['scal linear velocity', 'angular velocity $(deg/sec)$']
+    ylabels = [r'scaled velocity $(sec^{-1})$', 'angular velocity $(deg/sec)$']
 
     for i in [0, 1]:
         fig, ax = plt.subplots(1, 1, figsize=(10, 5))
@@ -2658,14 +2675,14 @@ def plot_vel_during_strides(dataset, use_component=False, save_to=None, return_f
         ax.set_xticklabels(labels=[r'$0$', r'$\frac{\pi}{2}$', r'$\pi$', r'$\frac{3\pi}{2}$', r'$2\pi$'])
         ax.set_xlim([0, Npoints - 1])
 
-        ax.set_ylabel(ylabels[i], fontsize=15)
-        ax.set_xlabel('$\phi_{stride}$', fontsize=15)
+        ax.set_ylabel(ylabels[i])
+        ax.set_xlabel('$\phi_{stride}$')
         # axs.set_xlim([trange[0], trange[-1]])
-        l = ax.legend(loc='upper right', fontsize=12)
+        l = ax.legend(loc='upper right')
         # plt.MaxNLocator(4)
         for j, text in enumerate(l.get_texts()):
             text.set_color(cs[i][j])
-        plt.subplots_adjust(bottom=0.15, top=0.96, left=0.08, right=0.97, wspace=0.01)
+        plt.subplots_adjust(bottom=0.2, top=0.95, left=0.1, right=0.95, wspace=0.01)
         fig.savefig(filepaths[i], dpi=300)
         print(f'Plot saved as {filepaths[i]}')
 
@@ -2863,7 +2880,7 @@ def plot_crawl_pars(datasets, labels, simVSexp=False, save_to=None, legend=False
     return process_plot(fig, save_to, filename, return_fig)
 
 
-def plot_endpoint_params(datasets, labels, mode='full', save_to=None, save_as=None, return_fig=False):
+def plot_endpoint_params(datasets, labels, mode='full', par_shorts=None, save_to=None, save_as=None, return_fig=False):
     warnings.filterwarnings('ignore')
     Ndatasets, colors, save_to = plot_config(datasets, labels, save_to, subfolder='endpoint')
     if save_as is None:
@@ -2876,57 +2893,62 @@ def plot_endpoint_params(datasets, labels, mode='full', save_to=None, save_as=No
     ylim = [0.0, 0.25]
     nbins = 20
 
-    if mode == 'minimal':
-        par_shorts = ['l_mu', 'fsv', 'sv_mu', 'str_sd_mu',
-                      'cum_t', 'str_tr', 'pau_tr', 'tor',
-                      'tor5_mu', 'tor20_mu', 'sdisp40_max', 'sdisp40_fin',
-                      'b_mu', 'bv_mu', 'Ltur_tr', 'Rtur_tr']
+    if par_shorts is None :
+
+        if mode == 'minimal':
+            par_shorts = ['l_mu', 'fsv', 'sv_mu', 'str_sd_mu',
+                          'cum_t', 'str_tr', 'pau_tr', 'tor',
+                          'tor5_mu', 'tor20_mu', 'sdisp40_max', 'sdisp40_fin',
+                          'b_mu', 'bv_mu', 'Ltur_tr', 'Rtur_tr']
 
 
-    elif mode == 'limited':
+        elif mode == 'limited':
 
-        par_shorts = ['l_mu', 'fsv', 'sv_mu', 'str_sd_mu',
-                      'cum_t', 'str_tr', 'pau_tr', 'pau_t_mu',
-                      'tor5_mu', 'tor5_std', 'tor20_mu', 'tor20_std',
-                      'tor', 'sdisp_mu', 'sdisp40_max', 'sdisp40_fin',
-                      'b_mu', 'b_std', 'bv_mu', 'bv_std',
-                      'Ltur_tr', 'Rtur_tr', 'Ltur_fo_mu', 'Rtur_fo_mu']
+            par_shorts = ['l_mu', 'fsv', 'sv_mu', 'str_sd_mu',
+                          'cum_t', 'str_tr', 'pau_tr', 'pau_t_mu',
+                          'tor5_mu', 'tor5_std', 'tor20_mu', 'tor20_std',
+                          'tor', 'sdisp_mu', 'sdisp40_max', 'sdisp40_fin',
+                          'b_mu', 'b_std', 'bv_mu', 'bv_std',
+                          'Ltur_tr', 'Rtur_tr', 'Ltur_fo_mu', 'Rtur_fo_mu']
 
 
-    elif mode == 'full':
+        elif mode == 'full':
 
-        par_shorts = ['l_mu', 'str_N', 'str_rr', 'fsv',
-                      'cum_d', 'cum_sd', 'v_mu', 'sv_mu',
-                      'str_d_mu', 'str_d_std', 'str_sd_mu', 'str_sd_std',
-                      'str_std_mu', 'str_std_std', 'str_sstd_mu', 'str_sstd_std',
-                      'str_fo_mu', 'str_fo_std', 'str_ro_mu', 'str_ro_std',
-                      'str_b_mu', 'str_b_std', 'str_t_mu', 'str_t_std',
-                      'cum_t', 'str_tr', 'pau_tr', 'non_str_tr',
-                      'pau_N', 'pau_t_mu', 'pau_t_std', 'tor',
-                      'tor2_mu', 'tor5_mu', 'tor10_mu', 'tor20_mu',
-                      'tor2_std', 'tor5_std', 'tor10_std', 'tor20_std',
-                      'disp_mu', 'disp_fin', 'disp40_fin', 'disp40_max',
-                      'sdisp_mu', 'sdisp_fin', 'sdisp40_fin', 'sdisp40_max',
-                      'Ltur_t_mu', 'Ltur_t_std', 'cum_Ltur_t', 'Ltur_tr',
-                      'Rtur_t_mu', 'Rtur_t_std', 'cum_Rtur_t', 'Rtur_tr',
-                      'Ltur_fo_mu', 'Ltur_fo_std', 'Rtur_fo_mu', 'Rtur_fo_std',
-                      'b_mu', 'b_std', 'bv_mu', 'bv_std',
-                      ]
+            par_shorts = ['l_mu', 'str_N', 'str_rr', 'fsv',
+                          'cum_d', 'cum_sd', 'v_mu', 'sv_mu',
+                          'str_d_mu', 'str_d_std', 'str_sd_mu', 'str_sd_std',
+                          'str_std_mu', 'str_std_std', 'str_sstd_mu', 'str_sstd_std',
+                          'str_fo_mu', 'str_fo_std', 'str_ro_mu', 'str_ro_std',
+                          'str_b_mu', 'str_b_std', 'str_t_mu', 'str_t_std',
+                          'cum_t', 'str_tr', 'pau_tr', 'non_str_tr',
+                          'pau_N', 'pau_t_mu', 'pau_t_std', 'tor',
+                          'tor2_mu', 'tor5_mu', 'tor10_mu', 'tor20_mu',
+                          'tor2_std', 'tor5_std', 'tor10_std', 'tor20_std',
+                          'disp_mu', 'disp_fin', 'disp40_fin', 'disp40_max',
+                          'sdisp_mu', 'sdisp_fin', 'sdisp40_fin', 'sdisp40_max',
+                          'Ltur_t_mu', 'Ltur_t_std', 'cum_Ltur_t', 'Ltur_tr',
+                          'Rtur_t_mu', 'Rtur_t_std', 'cum_Rtur_t', 'Rtur_tr',
+                          'Ltur_fo_mu', 'Ltur_fo_std', 'Rtur_fo_mu', 'Rtur_fo_std',
+                          'b_mu', 'b_std', 'bv_mu', 'bv_std',
+                          ]
 
-    elif mode == 'deb':
+        elif mode == 'deb':
 
-        par_shorts = [
-            'deb_f_mu', 'hunger', 'reserve_density', 'puppation_buffer',
-            'cum_d', 'cum_sd', 'str_N', 'fee_N',
-            'str_tr', 'pau_tr', 'fee_tr', 'f_am',
-            'l_mu', 'm'
-            # 'tor2_mu', 'tor5_mu', 'tor10_mu', 'tor20_mu',
-            # 'v_mu', 'sv_mu',
+            par_shorts = [
+                'deb_f_mu', 'hunger', 'reserve_density', 'puppation_buffer',
+                'cum_d', 'cum_sd', 'str_N', 'fee_N',
+                'str_tr', 'pau_tr', 'fee_tr', 'f_am',
+                'l_mu', 'm'
+                # 'tor2_mu', 'tor5_mu', 'tor10_mu', 'tor20_mu',
+                # 'v_mu', 'sv_mu',
 
-        ]
+            ]
 
-    pars, sim_labels, exp_labels, xlabels = par_conf.par_dict_lists(shorts=par_shorts,
-                                                                    to_return=['par', 'symbol', 'exp_symbol', 'unit'])
+        else :
+            raise ValueError ('Provide parameter shortcuts or define a mode')
+
+    pars, symbols, exp_symbols, xlabels, xlims = par_conf.par_dict_lists(shorts=par_shorts,
+                                                                    to_return=['par', 'symbol', 'exp_symbol', 'unit', 'lim'])
     pars = [p for p in pars if all([p in d.endpoint_data.columns for d in datasets])]
 
     if Ndatasets > 1:
@@ -2938,18 +2960,28 @@ def plot_endpoint_params(datasets, labels, mode='full', save_to=None, save_as=No
     Npars = len(pars)
     Ncols = 4
     Nrows = int(np.ceil(Npars / Ncols))
-    fig, axs = plt.subplots(Nrows, Ncols, figsize=(5.5 * Ncols, 5 * Nrows), sharey=True)
+    fig, axs = plt.subplots(Nrows, Ncols, figsize=(8 * Ncols, 8 * Nrows), sharey=True)
     axs = axs.ravel()
-    for i, p in enumerate(pars):
+    for i, (p, symbol, xlabel, xlim) in enumerate(zip(pars, symbols, xlabels, xlims)):
+        # if xlim is not None :
+        #     print(p, xlabel,xlim, type(xlim), xlim[0])
         values = [d.endpoint_data[p].values for d in datasets]
         # print(p)
         if Ndatasets > 1:
             for ind, (v1, v2) in zip(fit_ind, itertools.combinations(values, 2)):
                 st, pv = ttest_ind(v1, v2, equal_var=False)
                 signif = pv <= 0.01
+                temp=np.nanmean(v1)<np.nanmean(v2)
+                if not signif :
+                    ii=0
+                else :
+                    if temp :
+                        ii=1
+                    else :
+                        ii=-1
                 fit_df[f'S_{p}'].loc[ind] = st
                 fit_df[f'P_{p}'].loc[ind] = np.round(pv, 11)
-                fit_df[p].loc[ind] = signif
+                fit_df[p].loc[ind] = ii
 
         Nvalues = [len(i) for i in values]
         a = np.empty((np.max(Nvalues), len(values),)) * np.nan
@@ -2968,8 +3000,15 @@ def plot_endpoint_params(datasets, labels, mode='full', save_to=None, save_as=No
             except:
                 pass
         if i % Ncols == 0:
-            axs[i].set_ylabel('probability', fontsize=15)
-        axs[i].set_title(p, fontsize=15)
+            axs[i].set_ylabel('probability')
+        # axs[i].set_title(symbol)
+        axs[i].set_title(p)
+        # axs[i].legend([Patch(color='none')], [symbol], loc='upper left')
+        axs[i].set_xlabel(xlabel)
+        # print(p, xlim)
+        if xlim is not None :
+            # print(p, xlim)
+            axs[i].set_xlim(xlim)
         axs[i].xaxis.set_major_locator(ticker.MaxNLocator(4))
         axs[i].yaxis.set_major_locator(ticker.MaxNLocator(4))
         axs[i].xaxis.set_major_formatter(ticker.ScalarFormatter(useOffset=True, useMathText=True))
@@ -2977,8 +3016,13 @@ def plot_endpoint_params(datasets, labels, mode='full', save_to=None, save_as=No
         # axs[i].ticklabel_format(axis='x', useMathText=True, scilimits=(-3, 3), useOffset=True)
 
         if Ndatasets > 1:
-            for z, (l1, l2) in enumerate(fit_df[fit_df[p] == True].index.values):
-                c1, c2 = colors[labels.index(l1)], colors[labels.index(l2)]
+            for z, (l1, l2) in enumerate(fit_df.index.values):
+                if fit_df[p].iloc[z] == 1 :
+                    c1, c2 = colors[labels.index(l1)], colors[labels.index(l2)]
+                elif fit_df[p].iloc[z] == -1 :
+                    c1, c2 = colors[labels.index(l2)], colors[labels.index(l1)]
+                else :
+                    continue
                 rad = 0.04
                 yy = 0.95 - z * 0.08
                 xx = 0.7
@@ -2995,12 +3039,13 @@ def plot_endpoint_params(datasets, labels, mode='full', save_to=None, save_as=No
                 axs[i].text(xx + 0.05, yy + rad / 1.5, f'p<10$^{{{pvi}}}$', ha='left', va='top', color='k', fontsize=15,
                             transform=axs[i].transAxes)
 
-    plt.subplots_adjust(wspace=0.1, hspace=0.3, left=0.06, right=0.96, top=0.8, bottom=0.04)
+    plt.subplots_adjust(wspace=0.2, hspace=0.5, left=0.1, right=0.95, top=0.8, bottom=0.05)
     plt.ylim(ylim)
     leg = axs[0].legend(bbox_to_anchor=(Ncols / 2, 1.8), loc='upper center', prop={'size': 20})
     if Ndatasets > 1:
         fit_df.to_csv(fit_filepath, index=True, header=True)
         print(f'Tests saved as {fit_filename}.')
+    # plt.show()
     return process_plot(fig, save_to, filename, return_fig)
 
 
@@ -3068,8 +3113,7 @@ def plot_turns(datasets, labels, save_to=None, return_fig=False):
 def plot_turn_Dorient2center(datasets, labels, min_angle=30.0, save_to=None, return_fig=False):
     Ndatasets, colors, save_to = plot_config(datasets, labels, save_to, subfolder='turn')
     filename = f'turn_Dorient2center.{suf}'
-    figsize = (10, 5)
-    fig, axs = plt.subplots(Ndatasets, 2, figsize=figsize,subplot_kw=dict(projection='polar'),sharex=True, sharey=True)
+    fig, axs = plt.subplots(Ndatasets, 2, figsize=(10, 5*Ndatasets),subplot_kw=dict(projection='polar'),sharex=True, sharey=True)
     if Ndatasets>1 :
         axs=axs.ravel()
     p = 'orientation_to_center'
@@ -3082,26 +3126,26 @@ def plot_turn_Dorient2center(datasets, labels, min_angle=30.0, save_to=None, ret
         dbs = [d.get_par(bd_par).dropna().values.flatten() for d in datasets]
 
         for i, (b0, b1, db, label, c) in enumerate(zip(b0s, b1s, dbs, labels, colors)):
-            b0=b0[np.abs(db)>min_angle]
-            b1=b1[np.abs(db)>min_angle]
+            B0=np.deg2rad(b0[np.abs(db)>min_angle])
+            B1=np.deg2rad(b1[np.abs(db)>min_angle])
+            circular_hist(axs[2*i+k], B0, bins=16,alpha=0.3, label='start', color=c, offset=np.pi/2)
+            circular_hist(axs[2*i+k], B1, bins=16,alpha=0.6, label='stop', color=c, offset=np.pi/2)
 
-            circular_hist(axs[2*i+k], np.deg2rad(b0), bins=16,alpha=0.3, label='start', color=c, offset=np.pi/2)
-            circular_hist(axs[2*i+k], np.deg2rad(b1), bins=16,alpha=0.6, label='stop', color=c, offset=np.pi/2)
-            m0=np.deg2rad(np.mean(b0))
-            m1=np.deg2rad(np.mean(b1))
-            arrow0 = patches.FancyArrowPatch((0, 0), (m0,0.3),zorder=2, mutation_scale=30, alpha=0.3, color=c,
+            arrow0 = patches.FancyArrowPatch((0, 0), (np.mean(B0),0.3),zorder=2, mutation_scale=30, alpha=0.3, facecolor=c,
                                              edgecolor='black', fill=True, linewidth=0.5)
             axs[2*i+k].add_patch(arrow0)
-            arrow1 = patches.FancyArrowPatch((0, 0), (m1,0.3), zorder=2, mutation_scale=30, alpha=0.6, color=c,
+            arrow1 = patches.FancyArrowPatch((0, 0), (np.mean(B1),0.3), zorder=2, mutation_scale=30, alpha=0.6, facecolor=c,
                                              edgecolor='black', fill=True, linewidth=0.5)
             axs[2 * i + k].add_patch(arrow1)
-            axs[2*i+k].set_xticklabels([0, '', +90, '',180, '', -90, ''])
+
             # Visualise by radius of bins
             # circular_hist(ax[1], angles1, offset=np.pi / 2, density=False)
             axs[2*i+k].legend(loc=[0.9, 0.9])
-            axs[2*i+k].set_title(f'Bearing before and after a {side} turn.', fontsize=15, y=-0.2)
-    plt.subplots_adjust(bottom=0.1, top=0.9, left=0.1, right=0.9, wspace=0.4)
-    plt.show()
+        axs[2*i+k].set_title(f'Bearing before and after a {side} turn.', fontsize=15, y=-0.2)
+    for ax in axs :
+        ax.set_xticklabels([0, '', +90, '', 180, '', -90, ''])
+    plt.subplots_adjust(bottom=0.1, top=0.9, left=0.05, right=0.9, wspace=0.4, hspace=0.1)
+    # plt.show()
     return process_plot(fig, save_to, filename, return_fig)
 
 
@@ -3189,6 +3233,13 @@ def comparative_analysis(datasets, labels, simVSexp=False, save_to=None):
     config = {'datasets': datasets,
               'labels': labels,
               'save_to': save_to}
+    for mode in ['orientation', 'orientation_x2', 'bend', 'spinelength']:
+        for agent_idx in [None, 0, 1]:
+            i = '' if agent_idx is None else f'_{agent_idx}'
+            try:
+                fig_dict[f'interference_{mode}{i}'] = plot_interference(**config, mode=mode, agent_idx=agent_idx)
+            except:
+                pass
     for scaled in [True, False]:
         for fig_cols in [1, 2]:
             s = 'scaled_' if scaled else ''
@@ -3218,13 +3269,7 @@ def comparative_analysis(datasets, labels, simVSexp=False, save_to=None):
             fig_dict[f'bout_fit_best_{r}'] = plot_stridesNpauses(**config, plot_fits='best', time_unit='sec', range=r)
         except :
             pass
-    for mode in ['orientation', 'orientation_x2', 'bend', 'spinelength']:
-        for agent_idx in [None, 0, 1]:
-            i = '' if agent_idx is None else f'_{agent_idx}'
-            try:
-                fig_dict[f'interference_{mode}{i}'] = plot_interference(**config, mode=mode, agent_idx=agent_idx)
-            except:
-                pass
+
     try:
         fig_dict['calibration'] = calibration_plot(save_to=save_to)
     except:

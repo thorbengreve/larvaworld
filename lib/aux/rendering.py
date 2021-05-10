@@ -1,5 +1,6 @@
 import math
 import os
+import time
 
 import numpy as np
 import pygame
@@ -13,7 +14,7 @@ class GuppiesViewer(object):
         x = 1550
         y = 400
         os.environ['SDL_VIDEO_WINDOW_POS'] = "%d,%d" % (x, y)
-
+        self.w_loc = [int(x) for x in os.environ['SDL_VIDEO_WINDOW_POS'].split(',')]
         self.zoom = zoom
         self.caption = caption
         self.window_size = width, height
@@ -26,6 +27,8 @@ class GuppiesViewer(object):
 
         self.display_size = self.scale_dims()
         self._window = self.init_screen()
+
+        # winInfo = pygame.PygameWindowInfo()
 
         if record_video_to:
             import imageio
@@ -43,9 +46,9 @@ class GuppiesViewer(object):
         self._translation = np.zeros(2)
 
     def draw_arena(self, tank_shape, tank_color, screen_color):
+        # t0=time.time()
         surf1 = pygame.Surface(self.display_size, pygame.SRCALPHA)
         surf2 = pygame.Surface(self.display_size, pygame.SRCALPHA)
-
         tank_shape = [self._transform(v) for v in tank_shape]
         pygame.draw.polygon(surf1, tank_color, tank_shape, 0)
 
@@ -55,6 +58,9 @@ class GuppiesViewer(object):
         # surf1.blit(surf2, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
         surf2.blit(surf1, (0, 0), special_flags=pygame.BLEND_RGBA_SUB)
         self._window.blit(surf2, (0, 0))
+        # t1 = time.time()
+        # print()
+        # print(np.round((t1-t0)*1000))
 
     def init_screen(self):
         if self.show_display:
@@ -210,7 +216,7 @@ class ScreenItem:
 
 class InputBox(ScreenItem):
     def __init__(self, visible=False, text='', color_inactive=None, color_active=None,
-                 screen_pos=None, linewidth=0.01, show_frame=False, agent=None, end_time=0):
+                 screen_pos=None, linewidth=0.01, show_frame=False, agent=None, end_time=0, start_time=0):
         super().__init__(color=color_active)
         self.screen_pos = screen_pos
         self.linewidth = linewidth
@@ -229,6 +235,7 @@ class InputBox(ScreenItem):
         self.text_font = None
         self.agent = agent
         self.end_time = end_time
+        self.start_time = start_time
         self.shape = None
 
     def draw(self, viewer):

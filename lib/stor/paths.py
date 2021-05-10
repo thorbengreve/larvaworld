@@ -37,3 +37,6 @@ conf_paths = {
     'Model': f'{ConfFolder}/ModelConfs.txt',
     'Batch': f'{ConfFolder}/BatchConfs.txt',
 }
+
+VideoSlideFolder = f'{get_parent_dir()}/lib/gui/video_slides'
+IntroSlideFolder = f'{get_parent_dir()}/lib/gui/intro_slides'

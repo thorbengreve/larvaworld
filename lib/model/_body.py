@@ -9,9 +9,6 @@ from shapely.ops import cascaded_union
 # TODO Find a way to use this. Now if changed everything is scal except locomotion. It seems that
 #  ApplyForceToCenter function does not scale
 # _world_scale = np.int(100)
-# from matplotlib.patches import Circle
-# from shapely.geometry import Polygon, Point
-
 
 import lib.aux.functions as fun
 
@@ -587,9 +584,9 @@ class LarvaBody:
             self.contour = self.set_contour()
             viewer.draw_polygon(self.contour, c, True, r / 5)
         else:
-            viewer.draw_polygon(self.get_shape().boundary.coords, c, True, r / 5)
-            # for seg in self.segs:
-            #     seg.draw(viewer)
+            # viewer.draw_polygon(self.get_shape().boundary.coords, c, True, r / 5)
+            for seg in self.segs:
+                seg.draw(viewer)
         if self.model.draw_head:
             viewer.draw_circle(self.get_global_front_end_of_head(), r / 2, (255, 0, 0), True, r / 6)
 

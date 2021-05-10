@@ -7,7 +7,8 @@ import numpy as np
 import lib.aux.functions as fun
 import lib.conf.dtype_dicts as dtypes
 from lib.gui.gui_lib import CollapsibleDict, check_collapsibles, check_toggles, \
-    retrieve_dict, t5_kws, t2_kws, color_pick_layout, popup_color_chooser, b_kws, t40_kws, b_kws, w_kws
+    retrieve_dict, t5_kws, t2_kws, color_pick_layout, b_kws, t40_kws, b_kws, w_kws, graphic_button
+
 
 """
     Demo - Drawing and moving demo
@@ -181,14 +182,14 @@ def check_abort(name, w, v, units, groups):
     o = name
     info = w['info']
     abort = True
-    odor_on = w[f'TOGGLE_{o}_ODOR'].metadata.state
+    odor_on = w[f'TOGGLE_{o}_ODOR'].get_state()
 
     if not odor_on:
         w[f'{o}_ODOR_odor_id'].update(value=None)
         w[f'{o}_ODOR_odor_intensity'].update(value=0.0)
 
     if o == 'SOURCE':
-        food_on = w[f'TOGGLE_{o}_FOOD'].metadata.state
+        food_on = w[f'TOGGLE_{o}_FOOD'].get_state()
         if not odor_on and not food_on:
             info.update(value=f"Assign food and/or odor to the drawn source")
             return True
@@ -250,8 +251,10 @@ def draw_env(env=None):
 
     collapsibles['Arena'] = CollapsibleDict('Arena', True,
                                             dict=arena_pars, type_dict=dtypes.get_dict_dtypes('arena'),
-                                            next_to_header=[sg.B('Reset', k='RESET_ARENA', **b_kws),
-                                                            sg.B('New', k='NEW_ARENA', **b_kws)])
+                                            next_to_header=[
+                                                graphic_button('burn', 'RESET_ARENA', tooltip='Reset to the initial arena. All drawn items will be erased.'),
+                                                graphic_button('globe_active', 'NEW_ARENA', tooltip='Create a new arena.All drawn items will be erased.'),
+                                            ])
 
     source_l, collapsibles = add_agent_layout('Source', 'green', collapsibles)
     larva_l, collapsibles = add_agent_layout('Larva', 'black', collapsibles)
@@ -334,10 +337,10 @@ def draw_env(env=None):
         elif not e.startswith('-GRAPH-'):
             # graph.set_cursor(cursor='left_ptr')       # not yet released method... coming soon!
             graph.Widget.config(cursor='left_ptr')
-        if e.startswith('PICK'):
-            target = e.split()[-1]
-            choice = popup_color_chooser('Dark Blue 3')
-            w[target].update(choice)
+        # if e.startswith('PICK'):
+        #     target = e.split()[-1]
+        #     choice = popup_color_chooser('Dark Blue 3')
+        #     w[target].update(choice)
         if e == "-GRAPH-":  # if there's a "Graph" event, then it's a mouse
             x, y = v["-GRAPH-"]
             if not dragging:
@@ -353,6 +356,7 @@ def draw_env(env=None):
             lastxy = x, y
             if None not in (start_point, end_point):
                 if v['-MOVE-']:
+                    # delta_X, delta_Y = scale_xy((delta_x, delta_y),s)
                     delta_X, delta_Y = delta_x / s, delta_y / s
                     for fig in drag_figures:
                         for k in list(db.keys()):
@@ -366,7 +370,7 @@ def draw_env(env=None):
                                         db[k]['items'][id]['pos'] = (X0 + delta_X, Y0 + delta_Y)
                                     elif k in ['s_g', 'l_g']:
                                         X0, Y0 = db[k]['items'][id]['loc']
-                                        db[k]['items']['loc'] = (X0 + delta_X, Y0 + delta_Y)
+                                        db[k]['items'][id]['loc'] = (X0 + delta_X, Y0 + delta_Y)
                                     elif k == 'b':
                                         db[k]['items'][id]['points'] = [(X0 + delta_X, Y0 + delta_Y) for X0, Y0 in
                                                                         db[k]['items'][id]['points']]
@@ -402,7 +406,7 @@ def draw_env(env=None):
                             o = 'SOURCE'
                             color = v[f'{o}_color']
                             if v['SOURCE_single'] or (v['SOURCE_group'] and sample_fig is None):
-                                fill_color = color if w['TOGGLE_SOURCE_FOOD'].metadata.state else None
+                                fill_color = color if w['TOGGLE_SOURCE_FOOD'].get_state() else None
                                 prior_rect = draw_shape(graph, shape=v[f'{o}_shape'], p1=start_point, p2=end_point,
                                                         line_color=color, fill_color=fill_color)
                                 temp = np.max(np.abs(np.array(end_point) - np.array(start_point)))
@@ -526,6 +530,10 @@ def draw_env(env=None):
             collapsibles[f'{o}_DISTRO'].disable(w) if not v[f'{o}_group'] else collapsibles[f'{o}_DISTRO'].enable(w)
             if v[f'{o}_group']:
                 w[f'{o}_id'].update(value='')
+        for k,v in db['l_g']['items'].items():
+            # print(k)
+            # print(v)
+            print(v['loc'])
     w.close()
     return env
 

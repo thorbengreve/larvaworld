@@ -446,6 +446,8 @@ def set_ParDb():
     par_db['lim'].loc['A_olf'] = [-1.0, 1.0]
     par_db['lim'].loc['A_tur'] = [10.0, 40.0]
     par_db['lim'].loc['Act_tur'] = [-20.0, 20.0]
+    par_db['lim'].loc['str_sd_std'] = [0.0, 0.15]
+    par_db['lim'].loc['str_sstd_std'] = [0.0, 0.2]
 
     to_drop1 = [f'{c}_l' for c in ['non_str', 'pau', 'str', 'tur', 'Ltur', 'Rtur', 'fee']]
     to_drop2 = fun.flatten_list([[f'{c}_{d}' for d in ['sstd', 'std', 'sd', 'd']] for c in ['non_str', 'fee']])
@@ -592,7 +594,7 @@ def get_runtime_pars():
 # print(get_par_dict(par='orientation_to_center'))
 # print(random_ar2)
 # print('c_odor1' in par_db.index.to_list())
-# print(par_db['par'].loc[par_db['collect'].isin([None])])
+
 # print(par_db['par'].loc[par_db['collect'].isin([None])].index.tolist())
 
 
@@ -601,4 +603,5 @@ if __name__ == '__main__':
     par_db = set_ParDb()
     set_ParShelve(par_db)
     # print(type(get_par('c_odor1')['dtype']))
-    # print(type(par_db['dtype'].loc['c_odor1']))
+    # print(get_par_dict(short='fov'))
+    # print(par_db.loc['tur_fo_mu'])

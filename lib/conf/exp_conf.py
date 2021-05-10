@@ -41,6 +41,7 @@ growth = {
           'env_params': 'growth',
           # 'env_params': growth_env,
           # 'collect_effectors': ['feeder'],
+          # 'collections': ['pose'],
           'collections': ['feeder', 'deb'],
           }
 rovers_sitters = {
@@ -112,6 +113,12 @@ capture_the_flag = {
         }
 keep_the_flag = {
         'env_params': 'keep_the_flag',
+        # 'env_params': king_env,
+        'collections': ['pose'],
+        }
+
+catch_me = {
+        'env_params': 'catch_me',
         # 'env_params': king_env,
         'collections': ['pose'],
         }

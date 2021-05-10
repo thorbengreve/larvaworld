@@ -8,7 +8,7 @@ import lib.aux.functions as fun
 from lib.aux.collecting import output_keys
 from lib.gui.gui_lib import CollapsibleDict, Collapsible, \
     named_bool_button, save_gui_conf, delete_gui_conf, GraphList, b12_kws, b6_kws, CollapsibleTable, \
-    b_kws, graphic_button, t10_kws, t12_kws, t18_kws, t8_kws
+    b_kws, graphic_button, t10_kws, t12_kws, t18_kws, t8_kws, w_kws, default_run_window, col_kws, window_size, col_size
 from lib.gui.draw_env import draw_env
 from lib.gui.life_conf import life_conf
 from lib.sim.single_run import run_sim, sim_analysis
@@ -16,17 +16,17 @@ from lib.conf.conf import loadConfDict, loadConf, next_idx
 
 
 def init_env(collapsibles):
-    s1 = CollapsibleDict('Arena', True, dict=dtypes.get_dict('arena'), type_dict=dtypes.get_dict_dtypes('arena'))
-    s2 = CollapsibleDict('Food grid', True, dict=dtypes.get_dict('food_grid'),
+    s1 = CollapsibleDict('Arena', False, dict=dtypes.get_dict('arena'), type_dict=dtypes.get_dict_dtypes('arena'))
+    s2 = CollapsibleDict('Food_grid', False, dict=dtypes.get_dict('food_grid'),disp_name='Food grid',
                          type_dict=dtypes.get_dict_dtypes('food_grid'), toggle=True, disabled=False)
-    s3 = CollapsibleDict('Odorscape', True, dict=dtypes.get_dict('odorscape'),
+    s3 = CollapsibleDict('Odorscape', False, dict=dtypes.get_dict('odorscape'),
                          type_dict=dtypes.get_dict_dtypes('odorscape'))
     for s in [s1, s2, s3]:
         collapsibles.update(s.get_subdicts())
     food_conf = [
         collapsibles['source_groups'].get_section(),
         collapsibles['source_units'].get_section(),
-        collapsibles['Food grid'].get_section()
+        collapsibles['Food_grid'].get_section()
     ]
     collapsibles['Sources'] = Collapsible('Sources', True, food_conf)
 
@@ -43,7 +43,7 @@ def init_env(collapsibles):
 
 def update_env(env_params, window, collapsibles):
     food_params = env_params['food_params']
-    collapsibles['Food grid'].update(window, food_params['food_grid'])
+    collapsibles['Food_grid'].update(window, food_params['food_grid'])
     collapsibles['Arena'].update(window, env_params['arena_params'])
     collapsibles['Odorscape'].update(window, env_params['odorscape'])
     border_list = env_params['border_list'] if 'border_list' in env_params.keys() else {}
@@ -59,7 +59,7 @@ def get_env(window, values, collapsibles, extend=True):
         'larva_params': d['larva_groups'].dict,
         'food_params': {
             'source_groups': d['source_groups'].dict,
-            'food_grid': d['Food grid'].get_dict(values, window),
+            'food_grid': d['Food_grid'].get_dict(values, window),
             'source_units': d['source_units'].dict,
         },
         'border_list': d['border_list'].dict,
@@ -74,7 +74,12 @@ def get_env(window, values, collapsibles, extend=True):
     return env0
 
 
-def build_sim_tab(collapsibles, graph_lists):
+def build_sim_tab():
+    dicts={}
+    collapsibles={}
+    graph_lists={}
+
+
     s1 = CollapsibleTable('larva_groups', True, headings=['group', 'color', 'N', 'model'], dict={},
                           disp_name='Larva groups',
                           type_dict=dtypes.get_dict_dtypes('distro', class_name='Larva', basic=False))
@@ -93,7 +98,7 @@ def build_sim_tab(collapsibles, graph_lists):
          graphic_button('load', 'LOAD_EXP', tooltip='Load the configuration for a simulation experiment.'),
          graphic_button('play', 'RUN_EXP', tooltip='Run the selected simulation experiment.')],
         [sg.Combo(list(loadConfDict('Exp').keys()), key='EXP', enable_events=True, readonly=True, **t18_kws)]
-    ])]
+    ],**col_kws)]
     sim_conf = [[sg.Text('Sim id:'), sg.In('unnamed_sim', key='sim_id')],
                 [sg.Text('Path:'), sg.In('single_runs', key='path')],
                 [sg.Text('Duration (min):'), sg.In(3, key='sim_dur')],
@@ -130,9 +135,9 @@ def build_sim_tab(collapsibles, graph_lists):
         [sg.Combo(list(loadConfDict('Env').keys()), key='ENV_CONF', enable_events=True, readonly=True, **t18_kws)],
     ])]
     l_env1 = init_env(collapsibles)
-    l_env = [[sg.Col([l_env0, l_env1])]]
-    l_sim = [[sg.Col(l_conf), sg.Col(l_env), graph_lists['EXP'].canvas]]
-    return l_sim, collapsibles, graph_lists
+    # l_env = [[sg.Col([l_env0, l_env1], **col_kws)]]
+    l_sim = [[sg.Col(l_conf,**col_kws, size=col_size(0.25)), sg.Col([l_env0, l_env1],**col_kws, size=col_size(0.25)), graph_lists['EXP'].canvas]]
+    return l_sim, collapsibles, graph_lists, dicts
 
 
 def eval_sim(event, values, window, collapsibles, dicts, graph_lists):
@@ -174,9 +179,9 @@ def eval_sim(event, values, window, collapsibles, dicts, graph_lists):
         exp_conf['enrich'] = True
         d = run_sim(**exp_conf, vis_kwargs=collapsibles['Visualization'].get_dict(values, window))
         if d is not None:
-            from lib.gui.analysis_tab import update_data_list
             dicts['analysis_data'][d.id] = d
-            update_data_list(window, dicts['analysis_data'])
+            if 'DATASET_IDS' in window.element_list() :
+                window.Element('DATASET_IDS').Update(values=list(dicts['analysis_data'].keys()))
             dicts['sim_results']['datasets'].append(d)
             fig_dict, results = sim_analysis(d, exp_conf['experiment'])
             dicts['sim_results']['fig_dict'] = fig_dict
@@ -203,7 +208,7 @@ def get_sim_conf(window, values):
         'sim_dur': float(values['sim_dur']),
         'dt': float(values['dt']),
         'path': str(values['path']),
-        'Box2D': window['TOGGLE_Box2D'].metadata.state,
+        'Box2D': window['TOGGLE_Box2D'].get_state(),
     }
     return sim
 
@@ -217,3 +222,22 @@ def get_exp(window, values, collapsibles):
         'collections': [k for k in output_keys if collapsibles['Output'].get_dict(values, window)[k]],
     }
     return exp_conf
+
+if __name__ == "__main__":
+    sg.theme('LightGreen')
+    dicts = {
+        'sim_results': {'datasets': []},
+        'batch_kwargs': None,
+        'batch_results': {},
+        'analysis_data': {},
+    }
+    l, col, graphs = build_sim_tab()
+    w = sg.Window('Simulation gui', l, size=(1800, 1200), **w_kws, location=(300, 100))
+    # print(graphs)
+    while True:
+        e, v = w.read()
+        if e in (None, 'Exit'):
+            break
+        default_run_window(w, e, v, col, graphs)
+        dicts, graphs = eval_sim(e, v, w, col, dicts, graphs)
+    w.close()

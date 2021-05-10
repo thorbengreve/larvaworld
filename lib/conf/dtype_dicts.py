@@ -148,7 +148,7 @@ all_null_dicts = {
     'food_grid':
         {
             'unique_id': 'Food_grid',
-            'grid_dims': (50, 50),
+            'grid_dims': (20, 20),
             'initial_value': 10 ** -3,
             'distribution': 'uniform',
         },
@@ -428,7 +428,7 @@ def get_dict_dtypes(name, **kwargs):
                    'feed_radius': float,
                    'max_feed_amount_ratio': float},
         'memory': {'DeltadCon': float,
-                   'state_spacePerOdorSide': 0,
+                   'state_spacePerOdorSide': int,
                    'gain_space': List[float],
                    'update_dt': float,
                    'alpha': float,
