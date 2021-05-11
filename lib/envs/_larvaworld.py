@@ -875,10 +875,10 @@ class LarvaWorldSim(LarvaWorld):
         return Nodors, layers
 
     def _generate_larva_pars(self, N, larva_pars, parameter_dict={}):
-        if larva_pars['neural_params']['intermitter_params']:
+        if larva_pars['brain']['intermitter_params']:
             for dist in ['pause_dist', 'stridechain_dist']:
-                if larva_pars['neural_params']['intermitter_params'][dist] == 'fit':
-                    larva_pars['neural_params']['intermitter_params'][dist] = get_ref_bout_distros(dist)
+                if larva_pars['brain']['intermitter_params'][dist] == 'fit':
+                    larva_pars['brain']['intermitter_params'][dist] = get_ref_bout_distros(dist)
         flat_larva_pars = fun.flatten_dict(larva_pars)
         sample_pars = [p for p in flat_larva_pars if flat_larva_pars[p] == 'sample']
         if len(sample_pars) >= 1:
@@ -910,12 +910,13 @@ class LarvaWorldSim(LarvaWorld):
             for i, (p, o, pars) in enumerate(zip(positions, orientations, all_pars)):
                 self.add_larva(position=p, orientation=o, id=f'{group_id}_{i}', pars=pars, group=group_id,
                                default_color=group_pars['default_color'])
-                # print(pars['neural_params']['olfactor_params'])
-                # print(i, pars['neural_params']['olfactor_params']['odor_dict']['CS']['mean'])
+                # print(pars['brain']['olfactor_params'])
+                # print(i, pars['brain']['olfactor_params']['odor_dict']['CS']['mean'])
             # raise
             # self._place_larvae(positions, orientations, ids, all_pars, group=group_id)
 
     def step(self):
+
         # Tick sim_clock
         self.sim_clock.tick_clock()
         self.Nticks += 1
@@ -929,18 +930,21 @@ class LarvaWorldSim(LarvaWorld):
                 if self.food_grid is not None:
                     self.food_grid.reset()
 
+        if not self.larva_collisions:
+            self.larva_bodies = self.get_larva_bodies()
+        # t0 = time.time()
         # Update value_layers
         for id, layer in self.odor_layers.items():
             layer.update_values()  # Currently doing something only for the DiffusionValueLayer
+        # t1 = time.time()
 
-        if not self.larva_collisions:
-            self.larva_bodies = self.get_larva_bodies()
         for l in self.get_flies():
             l.compute_next_action()
-
+        # t2 = time.time()
         self.active_larva_schedule.step()
+        # t3 = time.time()
         self.active_food_schedule.step()
-
+        # t4 = time.time()
         # step space
         if self.physics_engine:
             self.space.Step(self.dt, self._sim_velocity_iterations, self._sim_position_iterations)
@@ -950,6 +954,9 @@ class LarvaWorldSim(LarvaWorld):
         self.check_end_condition()
         # self.table_collector.add_table_row(table_name='Torque', )
 
+
+        # if self.Nticks%600 in [598,599,0,1,2] :
+        # print(np.round([t4-t0, t1-t0, t2-t1, t3-t2, t4-t3],4)*10000)
     # def mock_step(self):
     #     for id, layer in self.odor_layers.items():
     #         layer.update_values()  # Currently doing something only for the DiffusionValueLayer

@@ -54,9 +54,9 @@ def plot_mean_and_range(x, mean, lb, ub, axis, color_mean=None, color_shading=No
     axis.fill_between(x, ub, lb, color=color_shading, alpha=.2)
     # plot the mean on top
     if label is not None:
-        axis.plot(x, mean, color_mean, label=label)
+        axis.plot(x, mean, color_mean, label=label, linewidth=2)
     else:
-        axis.plot(x, mean, color_mean)
+        axis.plot(x, mean, color_mean, linewidth=2)
 
     # pass
 
@@ -2172,22 +2172,27 @@ def plot_pathlength(datasets, labels, scaled=True, save_to=None, save_as=None, r
 
     if save_as is not None:
         filename = save_as
-
+    # colors=['blue', 'darkred', 'purple', 'red']
     trange = np.linspace(t0, t1, Nticks)
-    fig, axs = plt.subplots(1, 1, figsize=(10, 5))
+    fig, axs = plt.subplots(1, 1, figsize=(7, 6))
     for d, lab, c in zip(datasets, labels, colors):
-        dst_df = d.step_data['cum_dst']
+        dst_df = d.step_data['cum_dst']/10
+        # dst_df = d.step_data['cum_dst']/10
         dst_m = dst_df.groupby(level='Step').quantile(q=0.5)
         dst_u = dst_df.groupby(level='Step').quantile(q=0.75)
         dst_b = dst_df.groupby(level='Step').quantile(q=0.25)
         plot_mean_and_range(x=trange, mean=dst_m, lb=dst_b, ub=dst_u, axis=axs, color_mean=c,
                             color_shading=c, label=lab)
+    # axs.set_ylabel('Pathlenght (cm)')
     axs.set_ylabel(ylab)
+    # axs.set_xlabel('Time on substrate (min)')
     axs.set_xlabel('time, $min$')
     axs.set_xlim([trange[0], trange[-1]])
+    axs.set_ylim(ymin=0)
+    # axs.set_ylim([0, 100])
     axs.xaxis.set_major_locator(ticker.MaxNLocator(5))
-    axs.legend(loc='upper left', fontsize=9)
-    fig.subplots_adjust(top=0.95, bottom=0.15, left=0.1, right=0.95, hspace=.005, wspace=0.05)
+    axs.legend(loc='upper left')
+    fig.subplots_adjust(top=0.95, bottom=0.15, left=0.2, right=0.95, hspace=.005, wspace=0.05)
     return process_plot(fig, save_to, filename, return_fig)
 
 
@@ -2324,51 +2329,64 @@ def plot_heatmap_PI(save_to, csv_filepath='PIs.csv', return_fig=False):
 
 
 def plot_odor_concentration(datasets, labels=None, save_to=None, return_fig=False):
-    return plot_timeplot('c_odor1', datasets=datasets, labels=labels, save_to=save_to, return_fig=return_fig)
+    return plot_timeplot(['c_odor1'], datasets=datasets, labels=labels, save_to=save_to, return_fig=return_fig)
 
 
 def plot_sensed_odor_concentration(datasets, labels=None, save_to=None, return_fig=False):
-    return plot_timeplot('dc_odor1', datasets=datasets, labels=labels, save_to=save_to, return_fig=return_fig)
+    return plot_timeplot(['dc_odor1'], datasets=datasets, labels=labels, save_to=save_to, return_fig=return_fig)
 
 
-def plot_timeplot(par_short, datasets, labels=None, save_to=None, return_fig=False):
-    par_dict = par_conf.get_par_dict(short=par_short)
-    par = par_dict['par']
-    sim_label = par_dict['symbol']
-    xlabel = par_dict['unit']
-    ylim = par_dict['lim']
-    # ylim=gui.retrieve_value(par_dict['lim'], Tuple[float,float])
-
+def plot_timeplot(par_shorts, datasets, labels=None,same_plot=True, show_first=True, save_to=None, return_fig=False):
+    N=len(par_shorts)
+    cols=['grey'] if N==1 else N_colors(N)
+    if not same_plot :
+        raise NotImplementedError
     d = datasets[0]
     s = d.step_data
-
-    dc = s[par]
-    dc0 = dc.xs(d.agent_ids[0], level='AgentID')
-
-    dc_m = dc.groupby(level='Step').quantile(q=0.5)
-    dc_u = dc.groupby(level='Step').quantile(q=0.75)
-    dc_b = dc.groupby(level='Step').quantile(q=0.25)
-
-    Nticks = len(dc_m)
-    dur = int(Nticks / d.fr)
-    trange = np.linspace(0, dur, Nticks)
     if save_to is None:
         save_to = d.plot_dir
-    filename = f'{par}.{suf}'
+
+
 
     fig, axs = plt.subplots(1, 1, figsize=(7.5, 5))
-    plot_mean_and_range(x=trange, mean=dc_m, lb=dc_u, ub=dc_b, axis=axs, color_mean='grey', color_shading='grey')
-    axs.plot(trange, dc0, 'r')
+    # ylim=gui.retrieve_value(par_dict['lim'], Tuple[float,float])
+
+    for short, c in zip(par_shorts, cols) :
+
+        par_dict = par_conf.get_par_dict(short=short)
+        par = par_dict['par']
+        symbol = par_dict['symbol']
+        xlabel = par_dict['unit']
+        ylim = par_dict['lim']
+        dc = s[par]
+        dc0 = dc.xs(d.agent_ids[0], level='AgentID')
+
+        dc_m = dc.groupby(level='Step').quantile(q=0.5)
+        dc_u = dc.groupby(level='Step').quantile(q=0.75)
+        dc_b = dc.groupby(level='Step').quantile(q=0.25)
+
+        Nticks = len(dc_m)
+        dur = int(Nticks / d.fr)
+        trange = np.linspace(0, dur, Nticks)
+
+
+
+        plot_mean_and_range(x=trange, mean=dc_m, lb=dc_u, ub=dc_b, axis=axs, color_mean=c, color_shading=c, label=symbol)
+        if show_first :
+            axs.plot(trange, dc0, 'r')
 
     axs.set_ylabel(xlabel)
     axs.set_xlabel('time, $sec$')
     axs.set_xlim([trange[0], trange[-1]])
     if ylim is not None:
         axs.set_ylim(ylim)
+    if N>1 :
+        plt.legend()
     # axs.legend(loc='upper right')
     axs.yaxis.set_major_locator(ticker.MaxNLocator(4))
     plt.subplots_adjust(bottom=0.15, left=0.2, right=0.95, top=0.95)
-    # plt.show()
+    plt.show()
+    filename = f'{par}.{suf}'
     return process_plot(fig, save_to, filename, return_fig)
 
 
@@ -3426,14 +3444,15 @@ def process_plot(fig, save_to, filename, return_fig):
 
 
 def barplot(datasets, labels, par_shorts=['f_am'], coupled_labels=None, xlabel=None, ylabel=None, save_to=None,
-            save_as=None, return_fig=False, show=False):
+            save_as=None, return_fig=False, show=False, leg_cols=None):
     Ndatasets, colors, save_to = plot_config(datasets, labels, save_to)
-    w = 0.1
+    w = 0.15
 
     if coupled_labels is not None:
         Npairs = len(coupled_labels)
         N = int(Ndatasets / Npairs)
-        leg_cols = N_colors(N)
+        if leg_cols is None :
+            leg_cols = N_colors(N)
         colors = leg_cols * Npairs
         leg_ids = labels[:N]
         ind = np.hstack([np.linspace(0 + i / N, w + i / N, N) for i in range(Npairs)])
@@ -3450,7 +3469,8 @@ def barplot(datasets, labels, par_shorts=['f_am'], coupled_labels=None, xlabel=N
                                                                   to_return=['par', 'symbol', 'exp_symbol', 'unit'])
 
     # Pull the formatting out here
-    bar_kwargs = {'width': w, 'color': colors, 'linewidth': 4, 'zorder': 5, 'align': 'center'}
+    bar_kwargs = {'width': w, 'color': colors, 'linewidth': 2, 'zorder': 5, 'align': 'center', 'edgecolor' : 'black'}
+    plot_kwargs = {'linewidth': 2, 'zorder': 5}
     err_kwargs = {'zorder': 20, 'fmt': 'none', 'linewidth': 4, 'ecolor': 'k', 'barsabove': True, 'capsize': 10}
 
     es = [d.endpoint_data for d in datasets]
@@ -3459,8 +3479,10 @@ def barplot(datasets, labels, par_shorts=['f_am'], coupled_labels=None, xlabel=N
         values = [e[p] for e in es]
         means = [v.mean() for v in values]
         stds = [v.std() for v in values]
-        fig, ax = plt.subplots(figsize=(10, 10))
+        fig, ax = plt.subplots(figsize=(9, 6))
+        # ax.p1 = plt.plot(ind, means,**plot_kwargs)
         ax.p1 = plt.bar(ind, means, **bar_kwargs)
+        # print(ind)
         ax.errs = plt.errorbar(ind, means, yerr=stds, **err_kwargs)
 
         if not coupled_labels:
@@ -3473,7 +3495,7 @@ def barplot(datasets, labels, par_shorts=['f_am'], coupled_labels=None, xlabel=N
                 i, j = k * N, k * N + 1
                 st, pv = ttest_ind(values[i], values[j], equal_var=False)
                 if pv <= 0.05:
-                    ax.text(ind[j], means[j] + stds[j], '*', ha='center', fontsize=20)
+                    ax.text(ind[i], means[i] + stds[i], '*', ha='center', fontsize=20)
                     # label_diff(i, j, '*', ind, means, ax)
 
         h = 2 * (np.nanmax(means) + np.nanmax(stds))
@@ -3483,15 +3505,98 @@ def barplot(datasets, labels, par_shorts=['f_am'], coupled_labels=None, xlabel=N
             plt.xticks(ind, labels, color='k')
         else:
             plt.xticks(new_ind, coupled_labels, color='k')
-            plt.legend(handles=[patches.Patch(color=c, label=id) for c, id in zip(leg_cols, leg_ids)],
-                       labels=leg_ids, fontsize=20, loc='upper right', prop={'size': 10})
+            plt.legend(handles=[patches.Patch(facecolor=c, label=id, edgecolor='black') for c, id in zip(leg_cols, leg_ids)],
+                       labels=leg_ids, loc='upper left', handlelength=1, handleheight=1)
         if ylabel is None:
             plt.ylabel(u)
         else:
             plt.ylabel(ylabel)
         plt.ylim(0, h)
+        # plt.ylim(0, 16)
         if xlabel is not None:
             plt.xlabel(xlabel)
+        plt.subplots_adjust(hspace=0.05, top=0.95, bottom=0.15, left=0.15, right=0.95)
+        if show:
+            plt.show()
+        return process_plot(fig, save_to, filename, return_fig)
+
+def lineplot(datasets, labels,markers, par_shorts=['f_am'], coupled_labels=None, xlabel=None, ylabel=None, save_to=None,
+            save_as=None, return_fig=False, show=False, leg_cols=None):
+    Ndatasets, colors, save_to = plot_config(datasets, labels, save_to)
+    # w = 0.15
+
+    if coupled_labels is not None:
+        Npairs = len(coupled_labels)
+        N = int(Ndatasets / Npairs)
+        if leg_cols is None :
+            leg_cols = N_colors(N)
+        colors = leg_cols * Npairs
+        leg_ids = labels[:N]
+        # print(leg_ids)
+        ind = np.arange(Npairs)
+        # ind = np.hstack([np.linspace(0 + i / N, w + i / N, N) for i in range(Npairs)])
+        # new_ind = ind[::N] + (ind[N - 1] - ind[0]) / N
+    else:
+        ind = np.arange(Ndatasets)
+
+    if save_as is None:
+        filename = f'lineplot.{suf}'
+    else:
+        filename = save_as
+
+    pars, sim_labels, exp_labels, units = par_conf.par_dict_lists(shorts=par_shorts,
+                                                                  to_return=['par', 'symbol', 'exp_symbol', 'unit'])
+
+    # Pull the formatting out here
+    plot_kwargs = {'linewidth': 2, 'zorder': 5}
+    err_kwargs = {'zorder': 2, 'fmt': 'none', 'linewidth': 4, 'ecolor': 'k', 'barsabove': True, 'capsize': 10}
+
+    es = [d.endpoint_data for d in datasets]
+
+    for p, u in zip(pars, units):
+        values = [e[p]*1000 for e in es]
+        means = [v.mean() for v in values]
+        stds = [v.std() for v in values]
+        fig, ax = plt.subplots(figsize=(8, 7))
+        for n, marker in zip(range(N), markers) :
+            ax.errs = plt.errorbar(ind, means[n::N], yerr=stds[n::N], **err_kwargs)
+            ax.p1 = plt.plot(ind, means[n::N], marker=marker, label=leg_ids[n],
+                             markeredgecolor='black',markerfacecolor=leg_cols[n],markersize=8, **plot_kwargs)
+
+
+        if not coupled_labels:
+            for i, j in itertools.combinations(np.arange(Ndatasets).tolist(), 2):
+                st, pv = ttest_ind(values[i], values[j], equal_var=False)
+                pv = np.round(pv, 4)
+                label_diff(i, j, f'p={pv}', ind, means, ax)
+        else:
+            for k in range(Npairs):
+                i, j = k * N, k * N + 1
+                st, pv = ttest_ind(values[i], values[j], equal_var=False)
+                if pv <= 0.05:
+                    ax.text(ind[k], np.max([means[i], means[j]]) + np.max([stds[i], stds[j]]), '*', ha='center', fontsize=20)
+                    # label_diff(i, j, '*', ind, means, ax)
+
+        h = 2 * (np.nanmax(means) + np.nanmax(stds))
+        ax.yaxis.set_major_locator(ticker.MaxNLocator(4))
+        ax.ticklabel_format(axis='y', useMathText=True, scilimits=(-3, 3), useOffset=True)
+        if coupled_labels is None:
+            plt.xticks(ind, labels, color='k')
+        else:
+            plt.xticks(ind, coupled_labels, color='k')
+            # plt.legend(handles=[patches.Patch(facecolor=c, label=id, edgecolor='black') for c, id in zip(leg_cols, leg_ids)],
+            #            labels=leg_ids, loc='upper left', handlelength=1, handleheight=1)
+        plt.legend(loc='upper right')
+        # plt.legend(handles=markers,labels=leg_ids, loc='upper right')
+        if ylabel is None:
+            plt.ylabel(u)
+        else:
+            plt.ylabel(ylabel)
+        plt.ylim(0, h)
+        # plt.ylim(0, 16)
+        if xlabel is not None:
+            plt.xlabel(xlabel)
+        plt.subplots_adjust(hspace=0.05, top=0.95, bottom=0.15, left=0.15, right=0.95)
         if show:
             plt.show()
         return process_plot(fig, save_to, filename, return_fig)

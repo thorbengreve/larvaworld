@@ -1,7 +1,6 @@
 import copy
 import PySimpleGUI as sg
 
-
 from lib.gui.gui_lib import CollapsibleDict, Collapsible, save_gui_conf, delete_gui_conf, b12_kws, \
     b6_kws, CollapsibleTable, graphic_button, t10_kws, t12_kws, t18_kws, w_kws, default_run_window, col_kws, col_size
 from lib.conf.conf import loadConfDict, loadConf
@@ -9,33 +8,23 @@ import lib.conf.dtype_dicts as dtypes
 
 
 def init_model(collapsibles={}):
-    for name, d, t_d, kwargs in zip(['Physics', 'Energetics', 'Body', 'Odor'],
-                                  [dtypes.get_dict('physics'),
-                                   dtypes.get_dict('energetics'),
-                                   dtypes.get_dict('body'),
-                                   dtypes.get_dict('odor')],
-        [dtypes.get_dict_dtypes('physics'),
-         dtypes.get_dict_dtypes('energetics'),
-         dtypes.get_dict_dtypes('body'),
-         dtypes.get_dict_dtypes('odor')],
-                                  [{}, {'toggle': True, 'disabled': True}, {}, {}]):
-        collapsibles[name] = CollapsibleDict(name, True, dict=d, type_dict=t_d, **kwargs)
+    l1=[]
+    for name, kwargs in zip(['Physics', 'Energetics', 'Body', 'Odor'],
+                                    [{}, {'toggle': True, 'disabled': True}, {}, {}]):
+        n=name.lower()
+        collapsibles[name] = CollapsibleDict(name, True, dict=dtypes.get_dict(n),type_dict=dtypes.get_dict_dtypes(n), **kwargs)
+        l1.append(collapsibles[name].get_section())
+    non_brain_layout = sg.Col(l1, **col_kws, size=col_size(0.25))
 
-    module_conf = []
+    l2 = []
     for k in dtypes.module_keys:
-        d = dtypes.get_dict(k)
-        t_d = dtypes.get_dict_dtypes(k)
-        s = CollapsibleDict(k.upper(), False, dict=d, type_dict=t_d, dict_name=k.upper(), toggle=True, auto_open=False)
+        s = CollapsibleDict(k.upper(), False, dict=dtypes.get_dict(k), type_dict=dtypes.get_dict_dtypes(k),
+                            dict_name=k.upper(), toggle=True, auto_open=False, disp_name=k)
         collapsibles.update(s.get_subdicts())
-        module_conf.append(s.get_section())
-    collapsibles['Brain'] = Collapsible('Brain', True, module_conf)
+        l2.append(s.get_section())
+    collapsibles['Brain'] = Collapsible('Brain', True, l2)
     brain_layout = sg.Col([collapsibles['Brain'].get_section(),
                            collapsibles['odor_gains'].get_section()],**col_kws, size=col_size(0.25))
-    non_brain_layout = sg.Col([collapsibles['Physics'].get_section(),
-                               collapsibles['Body'].get_section(),
-                               collapsibles['Energetics'].get_section(),
-                               collapsibles['Odor'].get_section()
-                               ],**col_kws, size=col_size(0.25))
 
     model_layout = [[brain_layout, non_brain_layout]]
 
@@ -44,13 +33,11 @@ def init_model(collapsibles={}):
 
 
 def update_model(larva_model, window, collapsibles):
-    for name, dict in zip(['Physics', 'Energetics', 'Body', 'Odor'],
-                          [larva_model['sensorimotor_params'], larva_model['energetics_params'],
-                           larva_model['body_params'], larva_model['odor_params']]):
-        collapsibles[name].update(window, dict)
-    module_dict = larva_model['neural_params']['modules']
+    for name in ['Physics', 'Energetics', 'Body', 'Odor']:
+        collapsibles[name].update(window, larva_model[name.lower()])
+    module_dict = larva_model['brain']['modules']
     for k, v in module_dict.items():
-        dic = larva_model['neural_params'][f'{k}_params']
+        dic = larva_model['brain'][f'{k}_params']
         if k == 'olfactor':
             if dic is not None:
                 odor_gains = dic['odor_dict']
@@ -68,22 +55,17 @@ def update_model(larva_model, window, collapsibles):
 def get_model(window, values, collapsibles):
     module_dict = dict(zip(dtypes.module_keys, [window[f'TOGGLE_{k.upper()}'].get_state() for k in dtypes.module_keys]))
     model = {}
-    model['neural_params'] = {}
-    model['neural_params']['modules'] = module_dict
+    model['brain'] = {}
+    model['brain']['modules'] = module_dict
 
-    for name, pars in zip(['Physics', 'Energetics', 'Body', 'Odor'],
-                          ['sensorimotor_params', 'energetics_params', 'body_params', 'odor_params']):
-        if collapsibles[name].state is None:
-            model[pars] = None
-        else:
-            model[pars] = collapsibles[name].get_dict(values, window)
-        # collapsibles[name].update(window,dict)
+    for name in ['Physics', 'Energetics', 'Body', 'Odor']:
+        model[name.lower()] = None  if collapsibles[name].state is None else collapsibles[name].get_dict(values, window)
 
     for k, v in module_dict.items():
-        model['neural_params'][f'{k}_params'] = collapsibles[k.upper()].get_dict(values, window)
-    if model['neural_params']['olfactor_params'] is not None:
-        model['neural_params']['olfactor_params']['odor_dict'] = collapsibles['odor_gains'].dict
-    model['neural_params']['nengo'] = False
+        model['brain'][f'{k}_params'] = collapsibles[k.upper()].get_dict(values, window)
+    if model['brain']['olfactor_params'] is not None:
+        model['brain']['olfactor_params']['odor_dict'] = collapsibles['odor_gains'].dict
+    model['brain']['nengo'] = False
     return copy.deepcopy(model)
 
 
@@ -129,7 +111,6 @@ def eval_model(event, values, window, collapsibles, dicts, graph_lists):
 if __name__ == "__main__":
     sg.theme('LightGreen')
     n='model'
-    # l, c, g, d = build_tab(n)
     l, c, g, d = build_model_tab()
     w = sg.Window(f'{n} gui', l, size=(1800, 1200), **w_kws, location=(300, 100))
 
@@ -139,6 +120,5 @@ if __name__ == "__main__":
             break
         default_run_window(w, e, v, c, g)
         d, g = eval_model(e,v,w, collapsibles=c, dicts=d, graph_lists=g)
-        # d, g = eval_tab(n, collapsibles=c, dicts=d, graph_lists=g)
     w.close()
 
