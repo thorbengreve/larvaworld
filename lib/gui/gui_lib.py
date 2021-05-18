@@ -679,8 +679,8 @@ color_map = {
 
 window_size=(1800, 1200)
 
-def col_size(window_x_fraction) :
-    return int(window_size[0]*window_x_fraction),window_size[1]
+def col_size(x_frac, y_frac=1.0) :
+    return int(window_size[0]*x_frac),int(window_size[1]*y_frac)
 
 w_kws = {
     'finalize': True,
@@ -719,18 +719,29 @@ t16_kws= {'size': (16, 1)
 t18_kws= {'size': (18, 1)
            }
 t14_kws = {'size': (14, 1)}
+t15_kws = {'size': (15, 1)}
+t11_kws = {'size': (11, 1)}
 
 t40_kws = {'size': (40, 1)}
 
 t5_kws = {'size': (5, 1)}
 t2_kws = {'size': (2, 1)}
+t1_kws = {'size': (1, 1)}
 t24_kws = {'size': (24, 1)}
+
+# class GuiProgressBar(sg.ProgressBar) :
+#     def __init__(self, max_value):
+#         super().__init__(max_value)
+#
+#     def update(self, t):
+#         self.UpdateBar(t)
 
 
 def graphic_button(name, key,**kwargs):
     dic={
         'load' : graphics.Button_Load,
         'play' : graphics.Button_Play,
+        'check' : graphics.Button_Check,
         'pick_color' : graphics.Button_Color_Circle,
         'edit' : graphics.Document_2_Edit,
         'data_add' : graphics.Database_Add,
@@ -1062,7 +1073,7 @@ class SectionDict:
                     type_dict = self.type_dict[k]
                 else:
                     type_dict = None
-                self.subdicts[k0] = CollapsibleDict(k0, True, disp_name=k, dict=v, type_dict=type_dict,
+                self.subdicts[k0] = CollapsibleDict(k0, False, disp_name=k, dict=v, type_dict=type_dict,
                                                     toggle=self.toggled_subsections)
                 ll = self.subdicts[k0].get_section()
                 l.append(ll)
@@ -1206,19 +1217,27 @@ class Collapsible:
     def disable(self, window):
         if self.toggle is not None:
             window[f'TOGGLE_{self.name}'].set_state(state=False, disabled=True)
+        self.close(window)
         self.state = None
-        self.sec_symbol.update(SYMBOL_UP)
-        window[f'SEC {self.name}'].update(visible=False)
+
 
     def enable(self, window):
         if self.toggle is not None:
             window[f'TOGGLE_{self.name}'].set_state(state=True, disabled=False)
         if self.auto_open:
-            self.state = True
-            self.sec_symbol.update(SYMBOL_DOWN)
-            window[f'SEC {self.name}'].update(visible=self.state)
+            self.open(window)
         elif self.state is None:
             self.state = False
+
+    def open(self, window):
+        self.state = True
+        self.sec_symbol.update(SYMBOL_DOWN)
+        window[f'SEC {self.name}'].update(visible=self.state)
+
+    def close(self, window):
+        self.state = False
+        self.sec_symbol.update(SYMBOL_UP)
+        window[f'SEC {self.name}'].update(visible=False)
 
     def get_subdicts(self):
         subdicts = {}
@@ -1243,6 +1262,8 @@ class CollapsibleTable(Collapsible):
                 self.col_widths.append(10)
             elif p in ['color']:
                 self.col_widths.append(8)
+            elif p in ['model']:
+                self.col_widths.append(14)
             elif type_dict[p] in [int, float]:
                 self.col_widths.append(np.max([len(p), 5]))
             else:
@@ -1294,6 +1315,10 @@ class CollapsibleTable(Collapsible):
         self.dict = dic
         self.data = self.set_data(dic)
         window[self.key].update(values=self.data, num_rows=len(self.data))
+        if self.data[0][0] != '' :
+            self.open(window)
+        else :
+            self.close(window)
 
     def edit_table(self, window):
         if self.header is not None:
@@ -1446,10 +1471,10 @@ class GraphList:
         list_key = f'{name}_GRAPH_LIST'
         values = list(fig_dict.keys())
         h = int(np.max([len(values), 5]))
-        header=[sg.Text('Graphs', **t10_kws)]
+        header=[sg.Text('Graphs', **t14_kws)]
         if self.next_to_header is not None :
             header+=self.next_to_header
-        l = [header,[sg.Listbox(values=values, change_submits=True, size=(20, h), key=list_key, auto_size_text=True)]]
+        l = [header,[sg.Listbox(values=values, change_submits=True, size=(25, h), key=list_key, auto_size_text=True)]]
         return l, list_key
 
     def init_canvas(self, name):
@@ -1630,7 +1655,7 @@ class DynamicGraph:
         self.canvas = self.canvas_elem.TKCanvas
         self.fig_agg = None
 
-        self.update_pars()
+        # self.update_pars()
         self.layout = 1
 
     def evaluate(self):
@@ -1777,3 +1802,13 @@ def default_run_window(window, event, values, collapsibles={}, graph_lists={}) :
 
     if event.startswith('EDIT_TABLE'):
         collapsibles[event.split()[-1]].edit_table(window)
+
+def load_shortcuts():
+    try:
+        conf = loadConfDict('Settings')
+    except:
+        conf = {'keys': {}, 'pygame_keys': {}}
+        for title, dic in dtypes.default_shortcuts.items():
+            conf['keys'].update(dic)
+        conf['pygame_keys'] = {k: dtypes.get_pygame_key(v) for k, v in conf['keys'].items()}
+    return conf

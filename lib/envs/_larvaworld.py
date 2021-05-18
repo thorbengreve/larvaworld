@@ -7,8 +7,9 @@ import progressbar
 import os
 from typing import List, Any
 import webcolors
+from mesa.datacollection import DataCollector
 
-
+from lib.conf.conf import loadConfDict
 
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import pygame
@@ -48,9 +49,11 @@ class LarvaWorld:
                  use_background=False,
                  traj_color=None,
                  touch_sensors=False, allow_clicks=True,
-                 experiment=None
+                 experiment=None,
+                 progress_bar=None,
                  ):
 
+        self.progress_bar = progress_bar
         self.vis_kwargs = vis_kwargs
         self.__dict__.update(self.vis_kwargs['draw'])
         self.__dict__.update(self.vis_kwargs['color'])
@@ -124,6 +127,8 @@ class LarvaWorld:
 
         self.end_condition_met = False
 
+
+
     def toggle(self, name, value=None, show=False, minus=False, plus=False):
 
         if name == 'snapshot #':
@@ -150,7 +155,7 @@ class LarvaWorld:
             setattr(self, name, not getattr(self, name))
             value = 'ON' if getattr(self, name) else 'OFF'
         self.screen_texts[name].text = f'{name} {value}'
-        self.screen_texts[name].end_time = pygame.time.get_ticks() + 3000
+        self.screen_texts[name].end_time = pygame.time.get_ticks() + 2000
         self.screen_texts[name].start_time = pygame.time.get_ticks()+int(self.dt*1000)
 
         if name == 'visible_ids':
@@ -264,7 +269,6 @@ class LarvaWorld:
         # del self.active_larva_schedule
         if self._screen is not None:
             self._screen.close_requested()
-
     # def delete(self):
     #     self.close()
     #     pygame.quit()
@@ -532,40 +536,41 @@ class LarvaWorld:
             Nsteps = self.Nsteps
         warnings.filterwarnings('ignore')
         # import time
-        with progressbar.ProgressBar(max_value=Nsteps) as bar:
-            while self.is_running and self.Nticks < Nsteps and not self.end_condition_met:
-                if not self.sim_paused:
-                    # t0=time.time()
-                    self.step()
-                    bar.update(self.Nticks)
-                if mode=='video' :
-                    if img_mode != 'snapshots':
-                        # t1 = time.time()
+        if self.progress_bar is None :
+            self.progress_bar = progressbar.ProgressBar(max_value=Nsteps)
+        bar=self.progress_bar
+        while self.is_running and self.Nticks < Nsteps and not self.end_condition_met:
+            if not self.sim_paused:
+                # t0=time.time()
+                self.step()
+                bar.update(self.Nticks)
+            if mode=='video' :
+                if img_mode != 'snapshots':
+                    # t1 = time.time()
+                    self.render(tick=self.Nticks)
+                    # t2 = time.time()
+                elif (self.Nticks - 1) % self.snapshot_interval == 0:
+                    # print('ss')
+                    self.render(tick=self.Nticks)
+            elif mode== 'image':
+                if img_mode == 'overlap':
+                    self.render(tick=self.Nticks)
+                elif img_mode == 'snapshots':
+                    if (self.Nticks - 1) % self.snapshot_interval == 0:
                         self.render(tick=self.Nticks)
-                        # t2 = time.time()
-                    elif (self.Nticks - 1) % self.snapshot_interval == 0:
-                        # print('ss')
-                        self.render(tick=self.Nticks)
-                elif mode== 'image':
-                    if img_mode == 'overlap':
-                        self.render(tick=self.Nticks)
-                    elif img_mode == 'snapshots':
-                        if (self.Nticks - 1) % self.snapshot_interval == 0:
-                            self.render(tick=self.Nticks)
-                            self.toggle(name='snapshot #')
-                            self._screen.render()
+                        self.toggle(name='snapshot #')
+                        self._screen.render()
 
-                # print()
-                # print((t1-t0)*1000, (t2-t1)*1000)
+            # print()
+            # print((t1-t0)*1000, (t2-t1)*1000)
 
-            if img_mode == 'overlap':
-                self._screen.render()
-                self._screen.close()
-            elif img_mode == 'final':
-                self.render(tick=self.Nticks)
-                self.toggle(name='snapshot #')
-                self._screen.render()
-                self._screen.close()
+        if img_mode == 'overlap':
+            self._screen.render()
+        elif img_mode == 'final':
+            self.render(tick=self.Nticks)
+            self.toggle(name='snapshot #')
+            self._screen.render()
+        self._screen.close()
         return self.is_running
 
     def set_end_condition(self):
@@ -600,6 +605,19 @@ class LarvaWorld:
                     f.brain.olfactor.gain = {id : -v for id,v in f.brain.olfactor.gain.items()}
             self.score = {self.target_group : 0.0,
                           self.follower_group : 0.0}
+
+        elif self.experiment == 'odor_pref_train' :
+            self.CS_trial_counter=1
+            self.UCS_trial_counter=0
+            print()
+            print(f'Training trial {self.CS_trial_counter} with CS started at {self.sim_clock.minute} : {self.sim_clock.second}')
+            for f in self.get_food():
+                if f.unique_id == 'CS_source':
+                    self.CS_source = f
+                elif f.unique_id == 'UCS_source':
+                    self.UCS_source = f
+            self.CS_source.odor_intensity = 2.0
+            self.UCS_source.odor_intensity = 0.0
 
     def check_end_condition(self):
         if self.experiment == 'capture_the_flag':
@@ -654,6 +672,52 @@ class LarvaWorld:
                     print(f'{group} group wins')
                     self.end_condition_met = True
             self.sim_state.set_text(f'L:{np.round(self.score["Left"],1)} vs R:{np.round(self.score["Right"],1)}')
+
+        elif self.experiment == 'odor_pref_train':
+            if self.sim_clock.timer_opened :
+                self.UCS_trial_counter+=1
+                print()
+                print(f'Starvation trial {self.UCS_trial_counter} with UCS started at {self.sim_clock.minute}:{self.sim_clock.second}')
+                self.CS_source.odor_intensity=0.0
+                self.UCS_source.odor_intensity=2.0
+                self.move_larvae_to_center()
+            if self.sim_clock.timer_closed :
+                self.CS_trial_counter += 1
+                print()
+                print(f'Training trial {self.CS_trial_counter} with CS started at {self.sim_clock.minute}:{self.sim_clock.second}')
+                self.CS_source.odor_intensity = 2.0
+                self.UCS_source.odor_intensity = 0.0
+                self.move_larvae_to_center()
+            if self.sim_clock.next_on is None and self.sim_clock.next_off is None :
+                print()
+                print(f'Test trial started at {self.sim_clock.minute}:{self.sim_clock.second}')
+                self.CS_source.odor_intensity = 2.0
+                self.UCS_source.odor_intensity = 2.0
+                self.move_larvae_to_center()
+            if self.sim_clock.minute>=35 :
+                print(f'Test trial ended at {self.sim_clock.minute}:{self.sim_clock.second}')
+
+    def move_larvae_to_center(self) :
+        N=len(self.get_flies())
+        orientations = np.random.uniform(low=0.0, high=np.pi*2, size=N).tolist()
+        positions = fun.generate_xy_distro(N=N, mode='uniform', scale=(0.005,0.015), loc=(0.0,0.0), shape='oval')
+
+        for l, p, o in zip(self.get_flies(), positions, orientations) :
+            temp=np.array([-np.cos(o), -np.sin(o)])
+            head = l.get_head()
+            head.set_pose(p,o)
+            head.update_vertices(p,o)
+            for i, seg in enumerate(l.segs[1:]) :
+                seg.set_orientation(o)
+                prev_p = l.get_global_rear_end_of_seg(seg_index=i)
+                new_p = prev_p + temp * l.seg_lengths[i+1] / 2
+                seg.set_position(new_p)
+                seg.set_lin_vel(0.0)
+                seg.set_ang_vel(0.0)
+            l.pos = l.get_global_midspine_of_body()
+            self.space.move_agent(l, l.pos)
+
+
 
     def create_borders(self, lines):
         s = self.scaling_factor
@@ -777,7 +841,8 @@ class LarvaWorldSim(LarvaWorld):
                  parameter_dict={}, **kwargs):
         super().__init__(id=id, **kwargs)
         if collected_pars is None:
-            collected_pars = {'step': [], 'endpoint': []}
+            collected_pars = {'step': [], 'endpoint': [], 'tables' : {} }
+
         self.starvation_hours = life_params['starvation_hours']
         if self.starvation_hours is None:
             self.starvation_hours = []
@@ -924,54 +989,36 @@ class LarvaWorldSim(LarvaWorld):
         if len(self.sim_starvation_hours) > 0:
             self.starvation = self.sim_clock.timer_on
             if self.sim_clock.timer_opened:
+                # print('Starvation period starts!')
                 if self.food_grid is not None:
                     self.food_grid.empty_grid()
             if self.sim_clock.timer_closed:
+                # print('Starvation period ended!')
                 if self.food_grid is not None:
                     self.food_grid.reset()
 
         if not self.larva_collisions:
             self.larva_bodies = self.get_larva_bodies()
-        # t0 = time.time()
         # Update value_layers
         for id, layer in self.odor_layers.items():
             layer.update_values()  # Currently doing something only for the DiffusionValueLayer
-        # t1 = time.time()
 
         for l in self.get_flies():
             l.compute_next_action()
-        # t2 = time.time()
         self.active_larva_schedule.step()
-        # t3 = time.time()
         self.active_food_schedule.step()
-        # t4 = time.time()
-        # step space
         if self.physics_engine:
             self.space.Step(self.dt, self._sim_velocity_iterations, self._sim_position_iterations)
             self.update_trajectories(self.get_flies())
         self.larva_step_col.collect(self)
+        # if self.table_collector is not None and self.Nticks%(int(3*60/self.dt))==0 :
+        #     for name, table in self.table_collector.tables.items() :
+        #         cols=list(table.keys())
+        #         for l in self.get_flies() :
+        #             self.table_collector.add_table_row(table_name=name, row={col : getattr(l, col) for col in cols})
 
         self.check_end_condition()
-        # self.table_collector.add_table_row(table_name='Torque', )
 
-
-        # if self.Nticks%600 in [598,599,0,1,2] :
-        # print(np.round([t4-t0, t1-t0, t2-t1, t3-t2, t4-t3],4)*10000)
-    # def mock_step(self):
-    #     for id, layer in self.odor_layers.items():
-    #         layer.update_values()  # Currently doing something only for the DiffusionValueLayer
-    #     for i, g in enumerate(self.get_flies()):
-    #         if np.random.choice([0, 1]) == 0:
-    #             # p,o=g.get_midpoint_position()
-    #             # FIXME now preparing only turner
-    #             # g.compute_next_action()
-    #             # g.step()
-    #             try:
-    #                 g.turner.step()
-    #             except:
-    #                 pass
-
-    # update trajectories
     def update_trajectories(self, flies):
         for fly in flies:
             fly.update_trajectory()
@@ -1026,7 +1073,7 @@ class LarvaWorldSim(LarvaWorld):
         self.food_end_col = TargetedDataCollector(schedule_id='all_food_schedule', mode='endpoint',
                                                   pars=['initial_amount', 'final_amount'])
 
-        # self.table_collector = DataCollector(tables={"Torque": ["unique_id", "torque"]})
+        self.table_collector = DataCollector(tables=collected_pars['tables']) if len(collected_pars['tables'])>0 else None
 
     def eliminate_overlap(self):
         scale = 3.0

@@ -26,8 +26,13 @@ def sim_enrichment(d, experiment):
     elif experiment == 'dispersion':
         d.enrich(length_and_centroid=False, is_last=False)
     elif experiment in ['chemotaxis_local', 'chemotaxis_diffusion']:
+        d.linear_analysis(is_last=False)
         d.angular_analysis(is_last=False)
-        d.detect_turns(track_params = ['orientation_to_center'],is_last=False)
+        d.detect_strides(is_last=False)
+        d.detect_pauses(is_last=False)
+        d.detect_turns(is_last=False)
+        for chunk in ['turn', 'stride', 'pause']:
+            d.compute_chunk_bearing2source(chunk=chunk, source=(0.0,0.0),is_last=False)
     return d
 
 
@@ -111,7 +116,11 @@ def sim_analysis(d, exp_type):
 
     elif exp_type in ['chemotaxis_approach', 'chemotaxis_local', 'chemotaxis_diffusion']:
         if exp_type in ['chemotaxis_local', 'chemotaxis_diffusion']:
-            fig_dict['turn_Dorient2center'] = plot_turn_Dorient2center(datasets=[d], labels=[d.id])
+            for chunk in ['turn', 'stride', 'pause']:
+                for dur in [0.0,0.5,1.0] :
+                    fig_dict[f'{chunk}_Dorient2source_min_{dur}_sec'] = plot_chunk_Dorient2source(datasets=[d], labels=[d.id],
+                                                                                 chunk=chunk, source=(0.0, 0.0), min_dur=dur)
+            # fig_dict['turn_Dorient2center'] = plot_turn_Dorient2center(datasets=[d], labels=[d.id])
         for p in ['c_odor1', 'dc_odor1', 'A_olf', 'A_tur', 'Act_tur']:
             fig_dict[p] = plot_timeplot([p], datasets=[d])
         dic = plot_distance_to_source(dataset=d, exp_type=exp_type)
@@ -120,15 +129,24 @@ def sim_analysis(d, exp_type):
                                          random_colors=True, trajectories=True, trajectory_dt=0,
                                          visible_clock=False, visible_scale=False, media_name='single_trajectory')
         d.visualize(agent_ids=[d.agent_ids[0]], vis_kwargs=vis_kwargs)
-    elif exp_type in ['odor_preference']:
+    elif exp_type in ['odor_pref_test', 'odor_pref_train']:
         ind = d.compute_preference_index()
-        print(ind)
+        print(f'Preference for left odor : {np.round(ind,3)}')
         results['PI'] = ind
 
         # return ind
-    elif exp_type == 'odor_preference_RL':
-        fig_dict['best_gains'] = plot_timeplot(['g_odor1', 'g_odor2'], datasets=[d], show_first=False)
-        # fig_dict['best_gains_2'] = plot_timeplot('g_odor2', datasets=[d])
+    if exp_type in ['odor_preference_RL', 'odor_pref_train']:
+        fig_dict['best_gains_table'] = plot_timeplot(['g_odor1', 'g_odor2'], datasets=[d], show_first=False, table='best_gains')
+        fig_dict['reward_table'] = plot_timeplot(['cum_reward'], datasets=[d], show_first=False, table='best_gains')
+        fig_dict['olfactor_decay_table'] = plot_timeplot(['D_olf'], datasets=[d], show_first=False, table='best_gains')
+        # fig_dict['best_gains'] = plot_timeplot(['g_odor1', 'g_odor2'], datasets=[d], show_first=False)
+        # fig_dict['best_gains_inds'] = plot_timeplot(['g_odor1', 'g_odor2'], datasets=[d], show_first=False, individuals=True)
+    elif exp_type == 'chemotaxis_RL':
+        fig_dict['best_gains_table'] = plot_timeplot(['g_odor1'], datasets=[d], show_first=False, table='best_gains')
+        fig_dict['reward_table'] = plot_timeplot(['cum_reward'], datasets=[d], show_first=False, table='best_gains')
+        fig_dict['olfactor_decay_table'] = plot_timeplot(['D_olf'], datasets=[d], show_first=False, table='best_gains')
+        fig_dict['olfactor_decay_table_inds'] = plot_timeplot(['D_olf'], datasets=[d], show_first=False, table='best_gains', individuals=True)
+        # fig_dict['best_gains'] = plot_timeplot(['g_odor1', 'g_odor2'], datasets=[d], show_first=False)
     elif exp_type == 'realistic_imitation':
         d.save_agent(pars=fun.flatten_list(d.points_xy) + fun.flatten_list(d.contour_xy), header=True)
     return fig_dict, results
@@ -154,7 +172,6 @@ def run_sim_basic(
     Nsec = sim_params['sim_dur'] * 60
     path = sim_params['path']
     Box2D = sim_params['Box2D']
-
     if save_to is None:
         save_to = paths.SimFolder
     if path is not None:
@@ -207,6 +224,7 @@ def run_sim_basic(
         d.set_end_data(env.larva_end_col.get_agent_vars_dataframe().droplevel('Step'))
         d.set_food_end_data(env.food_end_col.get_agent_vars_dataframe().droplevel('Step'))
 
+
         end = time.time()
         dur = end - start
         param_dict['duration'] = np.round(dur, 2)
@@ -216,6 +234,8 @@ def run_sim_basic(
             if enrich and experiment is not None:
                 d = sim_enrichment(d, experiment)
             d.save()
+            if env.table_collector is not None :
+                d.save_tables(env.table_collector.tables)
             fun.dict_to_file(param_dict, d.sim_pars_file_path)
             # Save the odor layer
             # if env.Nodors > 0:
@@ -234,6 +254,7 @@ def collection_conf(dataset, collections):
     d = dataset
     step_pars = []
     end_pars = []
+    tables = {}
     for c in collections:
         if c == 'midline':
             step_pars += list(midline_xy_pars(N=d.Nsegs).keys())
@@ -243,9 +264,12 @@ def collection_conf(dataset, collections):
         else:
             step_pars += output[c]['step']
             end_pars += output[c]['endpoint']
+        if 'tables' in list(output[c].keys()) :
+            tables.update(output[c]['tables'])
 
     collected_pars = {'step': fun.unique_list(step_pars),
-                      'endpoint': fun.unique_list(end_pars)}
+                      'endpoint': fun.unique_list(end_pars),
+                      'tables' : tables}
     return collected_pars
 
 
@@ -275,11 +299,9 @@ def load_reference_dataset():
 
 
 def get_exp_conf(exp_type, sim_params, life_params=None, enrich=True, N=None, larva_model=None):
-    if life_params is None:
-        life_params = {'starvation_hours': None,
-                       'hours_as_larva': 0.0,
-                       'deb_base_f': 1.0}
+
     exp_conf = loadConf(exp_type, 'Exp')
+
     env = exp_conf['env_params']
     if type(env) == str:
         env = loadConf(env, 'Env')
@@ -296,7 +318,11 @@ def get_exp_conf(exp_type, sim_params, life_params=None, enrich=True, N=None, la
             v['model'] = loadConf(v['model'], 'Model')
 
     exp_conf['env_params'] = env
-    exp_conf['life_params'] = life_params
+    if 'life_params' not in list(exp_conf.keys()):
+        if life_params is None :
+            life_params = dtypes.get_dict('life')
+
+        exp_conf['life_params'] = life_params
     exp_conf['sim_params'] = sim_params
     exp_conf['experiment'] = exp_type
     exp_conf['enrich'] = enrich
