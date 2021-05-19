@@ -7,6 +7,6 @@ from lib.gui.gui import LarvaworldGui
 
 if __name__ == "__main__":
     larvaworld_gui = LarvaworldGui()
-    # larvaworld_gui = LarvaworldGui(tabs=['intro', 'exp'])
+    # larvaworld_gui = LarvaworldGui(tabs=['anal', 'settings'])
     # larvaworld_gui = LarvaworldGui(tabs=['intro','model', 'exp', 'batch', 'anal', 'video'])
     larvaworld_gui.run()
