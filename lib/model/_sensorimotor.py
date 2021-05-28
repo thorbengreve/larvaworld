@@ -233,7 +233,8 @@ class BodySim(BodyManager):
         #     return 0.0
         # else:
         #     return new_v
-
+        # if new_v>0 :
+        #     print('dd')
         return new_v
 
     def restore_body_bend(self):
@@ -251,9 +252,10 @@ class BodySim(BodyManager):
         # a = self.angles[0]
         if not self.model.physics_engine:
             if self.Nsegs == 2:
+                # kkk=self.spineangles[0]
                 self.spineangles[0] = fun.restore_bend_2seg(self.spineangles[0], d, l,
                                                             correction_coef=self.bend_correction_coef)
-
+                # print((np.rad2deg([kkk,self.spineangles[0]-kkk])*1).astype(int))
             else:
                 self.spineangles = fun.restore_bend(self.spineangles, d, l, self.Nsegs,
                                                     correction_coef=self.bend_correction_coef)
@@ -323,43 +325,35 @@ class BodySim(BodyManager):
         d = lin_vel * dt
         ang_vel0=np.clip(ang_vel, a_min=-np.pi - a0 / dt, a_max=(np.pi - a0) / dt)
 
-        in_tank=False
-        dd=0.01
-        counter = -1
-        while not in_tank :
-            # if np.isnan(ang_vel) :
-            #
-            #     print()
-            #     print(d, lin_vel)
-            #     d = 0
-            #     lin_vel = 0
-            #     print(self.unique_id, counter)
-            #     print(o0, hp0)
-            #     print(ang_vel)
-            #     print(ang_vel0)
-            #     print(np.abs(ang_vel)*np.sign(ang_vel0))
-            #     raise
-
-            counter+=1
-            ang_vel*=-(1+dd*counter)
+        def check_in_tank(ang_vel, o0, d, hr0) :
             o1 = o0 + ang_vel * dt
+            # print(o1,o0,ang_vel,dt)
             k = np.array([math.cos(o1), math.sin(o1)])
             dxy = k * d
-            if self.Nsegs>1 :
-                hr1=hr0+dxy
+            if self.Nsegs > 1:
+                hr1 = hr0 + dxy
                 hp1 = hr1 + k * self.seg_lengths[0] / 2
                 hf1 = hr1 + k * self.seg_lengths[0]
-            else :
+            else:
                 hp1 = hp0 + dxy
-                hf1 = hp1 + k * (self.get_sim_length()/2)
+                hf1 = hp1 + k * (self.get_sim_length() / 2)
 
             in_tank = fun.inside_polygon(points=[hf1, hp1], tank_polygon=self.tank_polygon)
+            return in_tank, o1, hr1, hp1
 
-        # if np.isnan(ang_vel):
-        #     print('xxxx', np.sign(ang_vel0))
-        ang_vel = np.abs(ang_vel)*np.sign(ang_vel0)
-        # if np.isnan(ang_vel):
-        #     print('xxxex', np.sign(ang_vel0))
+        in_tank, o1, hr1, hp1 = check_in_tank(ang_vel, o0, d, hr0)
+        # in_tank=False
+        dd=0.01
+        counter = -1
+        # ang_vel*=-1
+        while not in_tank :
+            # print(counter, ang_vel)
+            # print('xx')
+            counter+=1
+            ang_vel*=-(1+dd*counter)
+            in_tank, o1, hr1, hp1 = check_in_tank(ang_vel, o0, d, hr0)
+        if counter>=0:
+            ang_vel = np.abs(ang_vel)*np.sign(ang_vel0)
         head.set_pose(hp1, o1)
         head.update_vertices(hp1, o1)
         if self.Nsegs > 1:
@@ -409,19 +403,7 @@ class BodySim(BodyManager):
 
     def compute_body_bend(self):
         curr = sum(self.spineangles[:self.Nangles_b])
-        # if self.model.count_bend_errors:
-        #     self.body_bend_0 = self.body_bend
-        #     if np.abs(self.body_bend_0) > 2 and np.abs(curr) > 2 and self.body_bend_0 * curr < 0:
-        #         self.body_bend_errors += 1
-                # curr=np.sign(curr)*np.pi
-                # print('Illegal bend over rear axis')
         self.body_bend_0 = self.body_bend
-        # if np.abs(self.body_bend_0) > 2 and np.abs(curr) > 2 and self.body_bend_0 * curr < 0:
-        #     self.body_bend_errors += 1
-        #     self.segs[0].set_ang_vel(0)
-        #     print('ss')
-        # else :
-        #     self.body_bend = curr
         self.body_bend = curr
         self.body_bend_vel_0=self.body_bend_vel
         self.body_bend_acc_0=self.body_bend_acc

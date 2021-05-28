@@ -58,7 +58,7 @@ def sim_analysis(d, exp_type):
     elif exp_type in ['growth', 'rovers_sitters']:
         starvation_hours = d.config['starvation_hours']
         f = d.config['deb_base_f']
-        deb_model = deb_default(starvation_hours=starvation_hours, base_f=f)
+        deb_model = deb_default(epochs=starvation_hours, base_f=f)
         if exp_type == 'rovers_sitters':
             roversVSsitters = True
             datasets = d.split_dataset(larva_id_prefixes=['Sitter', 'Rover'])
@@ -70,7 +70,8 @@ def sim_analysis(d, exp_type):
 
 
 
-        deb_dicts = [deb_dict(d, id, starvation_hours=starvation_hours) for id in d.agent_ids] + [deb_model]
+        deb_dicts = list(d.load_deb_dicts().values()) + [deb_model]
+        # deb_dicts = [deb_dict(d, id, starvation_hours=starvation_hours) for id in d.agent_ids] + [deb_model]
         c = {'save_to': d.plot_dir,
              'roversVSsitters': roversVSsitters}
         c1 = {'deb_dicts': deb_dicts[:-1],
@@ -85,7 +86,7 @@ def sim_analysis(d, exp_type):
                 for i, s in enumerate([True, False]):
                     l = f'{m}_{t}_{i}'
                     save_as = f'{l}.pdf'
-                    fig_dict[l] = plot_debs(save_as=save_as, mode=m, time_unit=t, start_at_sim_start=s, **c, **c1)
+                    fig_dict[l] = plot_debs(save_as=save_as, mode=m, time_unit=t, **c, **c1)
         cc = {'datasets': datasets,
               'labels': labels,
               'save_to': d.plot_dir}
@@ -101,7 +102,8 @@ def sim_analysis(d, exp_type):
 
 
     elif exp_type == 'dispersion':
-        target_dataset = load_reference_dataset()
+
+        target_dataset = load_reference_dataset(dataset_id=d.config['sample_dataset'])
         datasets = [d, target_dataset]
         labels = ['simulated', 'empirical']
         dic0 = comparative_analysis(datasets=datasets, labels=labels, simVSexp=True, save_to=None)
@@ -171,6 +173,8 @@ def run_sim_basic(
     Nsec = sim_params['sim_dur'] * 60
     path = sim_params['path']
     Box2D = sim_params['Box2D']
+    sample_dataset = sim_params['sample_dataset']
+
     if save_to is None:
         save_to = paths.SimFolder
     if path is not None:
@@ -182,19 +186,21 @@ def run_sim_basic(
     param_dict = locals()
     start = time.time()
     Nsteps = int(Nsec / dt)
+    # print(Nsteps)
+    # raise
     # # FIXME This only takes the first configuration into account
     # print(env_params['larva_params'].values())
     Npoints = list(env_params['larva_params'].values())[0]['model']['body']['Nsegs'] + 1
 
-    d = LarvaDataset(dir=dir_path, id=id, fr=int(1 / dt),
-                     Npoints=Npoints, Ncontour=0,
+    d = LarvaDataset(dir=dir_path, id=id, fr=1/dt,
+                     Npoints=Npoints, Ncontour=0,sample_dataset=sample_dataset,
                      arena_pars=env_params['arena_params'],
                      par_conf=par_config, save_data_flag=save_data_flag, load_data=False,
                      life_params=life_params
                      )
 
     collected_pars = collection_conf(dataset=d, collections=collections)
-    env = LarvaWorldSim(id=id, dt=dt, Box2D=Box2D,
+    env = LarvaWorldSim(id=id, dt=dt, Box2D=Box2D,sample_dataset=sample_dataset,
                         env_params=env_params, collected_pars=collected_pars,
                         life_params=life_params, Nsteps=Nsteps,
                         save_to=d.vis_dir, experiment=experiment,
@@ -236,6 +242,11 @@ def run_sim_basic(
             if env.table_collector is not None :
                 d.save_tables(env.table_collector.tables)
             fun.dict_to_file(param_dict, d.sim_pars_file_path)
+            for l in env.get_flies() :
+                try :
+                    l.deb.save_dict(d.deb_dir)
+                except :
+                    pass
             # Save the odor layer
             # if env.Nodors > 0:
             #     env.plot_odorscape(save_to=d.plot_dir)
@@ -272,8 +283,8 @@ def collection_conf(dataset, collections):
     return collected_pars
 
 
-def load_reference_dataset():
-    reference_dataset = LarvaDataset(dir=paths.RefFolder, load_data=False)
+def load_reference_dataset(dataset_id='reference'):
+    reference_dataset = LarvaDataset(dir=f'{paths.RefFolder}/{dataset_id}', load_data=False)
     reference_dataset.load(step_data=False)
     return reference_dataset
 

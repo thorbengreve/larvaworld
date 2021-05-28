@@ -3,8 +3,9 @@ import math
 import random
 import sys
 import time
+from scipy.optimize import minimize
 from collections import deque
-
+from numpy.lib import scimath
 import numpy
 import pandas as pd
 from contextlib import contextmanager
@@ -22,6 +23,23 @@ import matplotlib.pyplot as plt
 from shapely.geometry import Polygon, LineString
 from shapely.ops import split
 from lib.stor.paths import LarvaShape_path
+
+
+def simplex(func, x0, args=()):
+    res = minimize(func, x0, args=args, method='nelder-mead', options={'xatol': 1e-8, 'disp': False}).x[0]
+    return res
+
+
+def beta0(x0, x1):
+    x03 = x0 ** (1 / 3)
+    x13 = x1 ** (1 / 3)
+    a3 = math.sqrt(3)
+
+    f1 = - 3 * x13 + a3 * np.arctan((1 + 2 * x13) / a3) - scimath.log(x13 - 1) + scimath.log(1 + x13 + x13 ** 2) / 2
+    f0 = - 3 * x03 + a3 * np.arctan((1 + 2 * x03) / a3) - scimath.log(x03 - 1) + scimath.log(1 + x03 + x03 ** 2) / 2
+    f = f1 - f0
+    return np.real(f)
+    # return f
 
 
 def sigmoid(x):
@@ -88,7 +106,7 @@ def restore_bend_2seg(bend, d, l, correction_coef=1.0):
         return bend * (1 - d / k0)
     elif k0 <= d:
         return 0
-    elif d<0 :
+    elif d < 0:
         return bend
 
 
@@ -215,13 +233,13 @@ def unwrap_deg(ts):
 
 
 def flatten_tuple(test_tuple):
-    res=[]
-    if isinstance(test_tuple, tuple) :
-        for i in test_tuple :
-            if isinstance(i, tuple) :
-                for j in i :
+    res = []
+    if isinstance(test_tuple, tuple):
+        for i in test_tuple:
+            if isinstance(i, tuple):
+                for j in i:
                     res.append(j)
-            else :
+            else:
                 res.append(i)
         return tuple(res)
 
@@ -229,6 +247,7 @@ def flatten_tuple(test_tuple):
     # for sub in test_tuple:
     #     res += flatten_tuple(sub)
     # return tuple(res)
+
 
 def flatten_list(l):
     return [item for sublist in l for item in sublist]
@@ -546,17 +565,18 @@ def compute_component_velocity(xy, angles, dt, return_dst=False):
     else:
         return v
 
-def compute_bearing2source(xs, ys,  ors, loc=(0.0,0.0), in_deg=True) :
+
+def compute_bearing2source(xs, ys, ors, loc=(0.0, 0.0), in_deg=True):
     # Compute the orientation relative to a source located at loc
     # args :
     #       xys : 2D array of the xy position.
     #       ors : 1D array of the absolute orientation (already in deg).
-    x0,y0=loc
-    dxs = x0- np.array(xs)
+    x0, y0 = loc
+    dxs = x0 - np.array(xs)
     dys = y0 - np.array(ys)
     rads = np.arctan2(dys, dxs)
-    drads=(ors-np.rad2deg(rads))%360
-    drads[drads>180]-=360
+    drads = (ors - np.rad2deg(rads)) % 360
+    drads[drads > 180] -= 360
     return drads if in_deg else np.deg2rad(rads)
 
 
@@ -584,7 +604,7 @@ def compute_velocity_threshold(v, Nbins=500, max_v=None, kernel_width=0.02):
     return minimum
 
 
-def match_larva_ids(s, dl=None, max_t=5 * 60, max_s=20, pars=None, e=None, min_Nids=1, max_Niters=1000):
+def match_larva_ids2(s, dl=None, max_t=5 * 60, max_s=20, pars=None, e=None, min_Nids=1, max_Niters=1000):
     t_r = np.linspace(0, max_t, max_Niters)
     s_r = np.linspace(0, max_s, max_Niters)
     if dl is None:
@@ -734,6 +754,165 @@ def match_larva_ids(s, dl=None, max_t=5 * 60, max_s=20, pars=None, e=None, min_N
     return ss
 
 
+def match_larva_ids(s, e, dl, max_t=5 * 60, max_s=20, pars=None, min_Nids=1, max_Niters=1000):
+    wl, wt, ws = 100, 1, 0.5
+    max_error = 200
+    max_counter = 100
+    Nidx=5+++0
+
+    def prior(maxs, last_xy, ls, idx):
+        pp = maxs.nsmallest(idx).iloc[[-1]]
+
+        id0, t0 = pp.index[0], pp.values[0]
+        xy0, l0 = last_xy[id0], ls[id0]
+        return [id0, t0, xy0, l0]
+
+    def next(id1, mins, first_xy, ls):
+        t1, xy1, l1 = mins[id1], first_xy[id1], ls[id1]
+        return [id1, t1, xy1, l1]
+
+    def eval_c(c0, c1):
+        tt = c1[1] - c0[1]
+        ll = np.abs(c1[3] - c0[3])
+        if tt <= 0:
+            return max_error*2
+        dd = np.sqrt(np.sum((c1[2] - c0[2]) ** 2))
+        return wt * tt + wl * ll + ws * dd
+
+    def eval(c0, id1, mins, first_xy, ls):
+        c1 = next(id1, mins, first_xy, ls)
+        return eval_c(c0, c1)
+
+    def match_c(c0, ids, mins, first_xy, ls):
+        ee = [eval(c0, id1, mins, first_xy, ls) for id1 in ids]
+        return ids[np.argmin(ee)], np.min(ee)
+
+    def match(ids, mins, maxs, first_xy, last_xy, ls, idx):
+        c0 = prior(maxs, last_xy, ls, idx)
+        id1, error = match_c(c0, ids, mins, first_xy, ls)
+        return np.array([(c0[0], id1), error])
+
+    def step(ls, ss, ids, mins, maxs, first_xy, last_xy, idx):
+        res = np.array([match(ids, mins, maxs, first_xy, last_xy, ls, idx+i) for i in range(Nidx)])
+        error=res[:,1].min()
+        id0,id1=res[np.argmin(res[:,1]),0]
+
+        if error<max_error :
+            ss.rename(index={id0: id1}, inplace=True)
+            ls[id1] = ss['spinelength'].loc[id1].dropna().mean()
+            ls.drop([id0], inplace=True)
+            ids, mins, maxs, first_xy, last_xy = update_extrema({id0: id1}, ids, mins, maxs, first_xy, last_xy)
+        return ls, ss, ids, mins, maxs, first_xy, last_xy, error
+
+    ls = e['length']
+    if pars is None:
+        pars = s.columns.values.tolist()
+    ss = s.dropna().reset_index(level='Step', drop=False)
+    ss['Step'] = ss['Step'].values.astype(int)
+    ids, mins, maxs, first_xy, last_xy = get_extrema(ss, pars)
+    counter = 0
+    error = 0
+    idx = 1
+    while counter < max_counter:
+        ls, ss, ids, mins, maxs, first_xy, last_xy, error = step(ls, ss, ids, mins, maxs, first_xy, last_xy, idx)
+
+        print(counter, idx, len(ids), int(error))
+        if error >= max_error:
+            idx += 1+Nidx
+            if idx >= len(ids)-Nidx:
+                counter += 1
+                idx = 1
+
+    # inds, dt, ds = 0, 0, 0
+    # while len(ids) > min_Nids and (dt<max_t or ds<max_s) :
+    #     inds+=1
+    #     print(inds, len(ids), dt, ds)
+    #     # Compute extrema
+    #     # mins = ss['Step'].groupby('AgentID').min()
+    #     # maxs = ss['Step'].groupby('AgentID').max()
+    #
+    #     # first_xy, last_xy= {},{}
+    #     # for id in ids :
+    #     #     first_xy[id] = ss[pars].xs(id).dropna().values[0,:]
+    #     #     last_xy[id] = ss[pars].xs(id).dropna().values[-1,:]
+    #
+    #     # pairs_found=False
+    #     for i in range(max_Niters):
+    #     # for s_i in range(max_Niters):
+    #         ds, dt =s_r[i], t_r[i]
+    #         nexts_sp=get_spatial_nexts(ids, ds,first_xy, last_xy, dl0, ls)
+    #         N_s=np.sum([len(next) for next in nexts_sp])
+    #         # if N_s==0 :
+    #         #     ddst += dst
+    #         if N_s > 0 :
+    #             nexts = get_temporal_nexts(ids, nexts_sp, mins, maxs, dt)
+    #             N_t = np.sum([len(next) for next in nexts])
+    #             if N_t > 0:
+    #         # else :
+    #         #     for t_i in range(max_Niters):
+    #         #         dt=t_r[t_i]
+    #         #         nexts = get_temporal_nexts(ids, nexts_sp, mins, maxs, dt)
+    #         #         N_t = np.sum([len(next) for next in nexts])
+    #                 # if N_t == 0:
+    #                 #     ddur += dur
+    #                 # if N_t > 0 :
+    #                 # else :
+    #                 # pairs_found = True
+    #                 taken = []
+    #                 pairs = dict()
+    #                 for id, next in zip(ids, nexts):
+    #                     next = [idx for idx in next if idx not in taken]
+    #                     if len(next) == 0:
+    #                         continue
+    #                     elif len(next) == 1:
+    #                         best_next = next[0]
+    #                         taken.append(best_next)
+    #                     elif len(next) > 1:
+    #                         errors = []
+    #                         for idx in next:
+    #                             if dl0 is None:
+    #                                 error = np.sum(np.abs(last_xy[id] - first_xy[idx]))
+    #                             else:
+    #                                 error = np.abs(ls[id] - ls[idx])
+    #                             errors.append(error)
+    #                         indmin = np.argmin(errors)
+    #                         best_next = next[indmin]
+    #                     pairs[best_next] = id
+    #                 while len(common_member(list(pairs.keys()), list(pairs.values()))) > 0:
+    #                     for id1, id2 in pairs.items():
+    #                         if id2 in list(pairs.keys()):
+    #                             pairs.update({id1: pairs[id2]})
+    #
+    #                 ss.rename(index=pairs, inplace=True)
+    #                 ids = ss.index.unique().tolist()
+    #                 print(pairs)
+    #                 break
+    #             if pairs_found:
+    #                 break
+    # else :
+    #     ddst += dst
+
+    # break
+    # break
+
+    # break
+    # break
+    # sss= ss.reset_index(drop=False).set_index(keys=['Step', 'AgentID'], drop=True)
+    # print(any(sss.index.duplicated()))
+    # print(sss[sss.index.duplicated()].index)
+    # print(sss.loc[(1324, 'Larva_10092'), 'head_x'])
+    # print(sss.loc[(1324, 'Larva_10110'), 'head_x'])
+
+    # print(pairs)
+    # print(nexts)
+    # print(best_nexts)
+    # break
+    print('Finalizing dataset')
+    ss.reset_index(drop=False, inplace=True)
+    ss.set_index(keys=['Step', 'AgentID'], inplace=True, drop=True)
+    return ss
+
+
 def get_spatial_nexts0(ids, ddst, first_xy, last_xy):
     nexts = [[idx for idx in ids if (idx != id and all(np.abs(last_xy[id] - first_xy[idx]) < ddst))] for id in ids]
     return nexts
@@ -783,21 +962,24 @@ def update_extrema(pairs, ids, mins, maxs, first_xy, last_xy):
     return ids, mins, maxs, first_xy, last_xy
 
 
-def single_parametric_interpolate(obj_x_loc,obj_y_loc,numPts=50):
+def single_parametric_interpolate(obj_x_loc, obj_y_loc, numPts=50):
     n = len(obj_x_loc)
-    vi = [[obj_x_loc[(i+1)%n] - obj_x_loc[i],
-         obj_y_loc[(i+1)%n] - obj_y_loc[i]] for i in range(n)]
+    vi = [[obj_x_loc[(i + 1) % n] - obj_x_loc[i],
+           obj_y_loc[(i + 1) % n] - obj_y_loc[i]] for i in range(n)]
     si = [np.linalg.norm(v) for v in vi]
     di = np.linspace(0, sum(si), numPts, endpoint=False)
     new_points = []
     for d in di:
-        for i,s in enumerate(si):
-            if d>s: d -= s
-            else: break
-        l = d/s
-        new_points.append((obj_x_loc[i] + l*vi[i][0],
-                           obj_y_loc[i] + l*vi[i][1]))
+        for i, s in enumerate(si):
+            if d > s:
+                d -= s
+            else:
+                break
+        l = d / s
+        new_points.append((obj_x_loc[i] + l * vi[i][0],
+                           obj_y_loc[i] + l * vi[i][1]))
     return new_points
+
 
 def xy_along_circle(N, loc, radius):
     # print(r, N, loc)
@@ -805,41 +987,40 @@ def xy_along_circle(N, loc, radius):
     p = [(loc[0] + np.cos(a) * radius[0], loc[1] + np.sin(a) * radius[1]) for a in angles]
     return p
 
-def xy_along_rect(N, loc, scale):
-    x0,y0=-scale
-    x1,y1=scale
-    rext_x=[loc[0]+x for x in[x0,x1,x1,x0]]
-    rext_y=[loc[1]+y for y in[y0,y0,y1,y1]]
-    p=single_parametric_interpolate(rext_x,rext_y,numPts=N)
-    return p
 
+def xy_along_rect(N, loc, scale):
+    x0, y0 = -scale
+    x1, y1 = scale
+    rext_x = [loc[0] + x for x in [x0, x1, x1, x0]]
+    rext_y = [loc[1] + y for y in [y0, y0, y1, y1]]
+    p = single_parametric_interpolate(rext_x, rext_y, numPts=N)
+    return p
 
 
 def xy_uniform_circle(N, loc, radius):
     angles = np.random.uniform(0, 2 * np.pi, N).tolist()
-    xs = np.random.uniform(0, radius[0]**2, N) ** 0.5 * np.cos(angles)
-    ys = np.random.uniform(0, radius[1]**2, N) ** 0.5 * np.sin(angles)
-    p = [(loc[0] + x, loc[1] + y) for a,x,y in zip(angles,xs,ys)]
+    xs = np.random.uniform(0, radius[0] ** 2, N) ** 0.5 * np.cos(angles)
+    ys = np.random.uniform(0, radius[1] ** 2, N) ** 0.5 * np.sin(angles)
+    p = [(loc[0] + x, loc[1] + y) for a, x, y in zip(angles, xs, ys)]
     return p
 
 
-
-def generate_xy_distro(mode, shape, N, loc=(0.0, 0.0), scale=(0.0, 0.0)) :
-    loc, scale=np.array(loc), np.array(scale)
+def generate_xy_distro(mode, shape, N, loc=(0.0, 0.0), scale=(0.0, 0.0)):
+    loc, scale = np.array(loc), np.array(scale)
     if mode == 'uniform':
-        if shape in ['circle', 'oval'] :
+        if shape in ['circle', 'oval']:
             return xy_uniform_circle(N=N, loc=loc, radius=scale)
         elif shape == 'rect':
-            return list(map(tuple,np.random.uniform(low=-scale, high=scale, size=(N, 2))+loc))
+            return list(map(tuple, np.random.uniform(low=-scale, high=scale, size=(N, 2)) + loc))
     elif mode == 'normal':
-        return np.random.normal(loc=loc, scale=scale/2, size=(N, 2)).tolist()
+        return np.random.normal(loc=loc, scale=scale / 2, size=(N, 2)).tolist()
     elif mode == 'periphery':
-        if shape in ['circle', 'oval'] :
+        if shape in ['circle', 'oval']:
             return xy_along_circle(N, loc=loc, radius=scale)
         elif shape == 'rect':
             return xy_along_rect(N, loc, scale)
-    else :
-        raise ValueError (f'XY distribution {mode} not implemented.')
+    else:
+        raise ValueError(f'XY distribution {mode} not implemented.')
 
 
 def generate_orientations(num_identical, circle_parsing, iterations):
@@ -1030,7 +1211,6 @@ def compute_dst(point1, point2):
 
 
 def N_colors(N, as_rgb=False):
-
     if N == 1:
         cs = ['blue']
     elif N == 2:
@@ -1067,4 +1247,3 @@ def LvsRtoggle(side):
 def mutate_value(v, range, scale=0.1):
     r0, r1 = range
     return float(np.round(np.clip(np.random.normal(loc=v, scale=scale * np.abs(r1 - r0)), a_min=r0, a_max=r1), 2))
-
