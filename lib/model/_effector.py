@@ -1,13 +1,11 @@
 import itertools
 import random
-import time
 
 import numpy as np
 from scipy import signal
-from scipy.stats import lognorm, rv_discrete
 
 import lib.aux.sampling as sampling
-from lib.aux.functions import flatten_tuple
+from lib.aux.functions import flatten_tuple, lognormal_discrete
 
 
 class Effector:
@@ -73,9 +71,10 @@ class Oscillator(Effector):
 
 class Crawler(Oscillator):
     def __init__(self, waveform, initial_amp=None, square_signal_duty=None, step_to_length_mu=None,
-                 step_to_length_std=0.0,
+                 step_to_length_std=0.0,initial_freq=1.3, freq_std=0.0,
                  gaussian_window_std=None, max_vel_phase=1.0, crawler_noise=0, **kwargs):
-        super().__init__(**kwargs)
+        initial_freq=np.random.normal(initial_freq, freq_std)
+        super().__init__(initial_freq = initial_freq, **kwargs)
         self.waveform = waveform
         self.activity = 0
         self.amp = initial_amp
@@ -137,9 +136,10 @@ class Crawler(Oscillator):
             super().oscillate()
             if self.complete_iteration and self.waveform == 'realistic':
                 self.step_to_length = self.generate_step_to_length()
-            activity += np.random.normal(scale=self.scaled_noise * length)
+            # activity += np.random.normal(scale=self.scaled_noise * length)
         else:
             activity = 0
+        activity += np.random.normal(scale=self.scaled_noise * length)
         return activity
         # return np.clip(activity, a_min=0, a_max=np.inf)
 
@@ -492,6 +492,14 @@ class Intermitter(Effector):
             self.pause_dist = None
             self.pause_min, self.pause_max = pause_dist['range']
             self.pause_mean, self.pause_std = pause_dist['mu'], pause_dist['sigma']
+        elif pause_dist['name'] == 'logNpow':
+
+            self.pause_min, self.pause_max = pause_dist['range']
+            # self.pause_mean, self.pause_std = pause_dist['mu'], pause_dist['sigma']
+            # self.pause_alpha, self.pause_switch = pause_dist['alpha'], pause_dist['switch']
+            self.pause_dist = sampling.logNpow_distro(a=pause_dist['alpha'], xmin=self.pause_min,xmid=pause_dist['switch'],
+                                                           xmax=self.pause_max, m=pause_dist['mu'], s=pause_dist['sigma'],
+                                                      r=pause_dist['ratio'], dt=self.dt, overlap=pause_dist['overlap'])
             # self.pause_dist = self.lognormal_discrete(mu=int(self.pause_mean / self.dt),
             #                                           sigma=int(self.pause_std / self.dt),
             #                                           min=int(self.pause_min / self.dt),
@@ -503,22 +511,17 @@ class Intermitter(Effector):
                                                                  xmax=self.stridechain_max)
         elif stridechain_dist['name'] == 'lognormal':
             self.stridechain_mean, self.stridechain_std = stridechain_dist['mu'], stridechain_dist['sigma']
-            self.stridechain_dist = self.lognormal_discrete(mu=self.stridechain_mean, sigma=self.stridechain_std,
-                                                            min=self.stridechain_min, max=self.stridechain_max)
-
-    def lognormal_discrete(self, mu, sigma, min, max):
-        Dd = lognorm(s=sigma, loc=0.0, scale=np.exp(mu))
-        pk2 = Dd.cdf(np.arange(min + 1, max + 2)) - Dd.cdf(np.arange(min, max + 1))
-        pk2 = pk2 / np.sum(pk2)
-        xrng = np.arange(min, max + 1, 1)
-        return rv_discrete(a=min, b=max, values=(xrng, pk2))
+            self.stridechain_dist = lognormal_discrete(mu=self.stridechain_mean, sigma=self.stridechain_std,
+                                                       min=self.stridechain_min, max=self.stridechain_max)
+            # print(self.stridechain_mean, self.stridechain_std, self.stridechain_min, self.stridechain_max)
 
     def generate_stridechain_length(self):
         if self.stridechain_dist is None:
-            return sampling.sample_lognormal_int(mean=self.stridechain_mean, sigma=self.stridechain_std,
+            l= sampling.sample_lognormal_int(mean=self.stridechain_mean, sigma=self.stridechain_std,
                                                  xmin=self.stridechain_min, xmax=self.stridechain_max)
         else:
-            return self.stridechain_dist.rvs(size=1)[0]
+            l=self.stridechain_dist.rvs(size=1)[0]
+        return l
 
     def generate_pause_duration(self):
         if self.pause_dist is None:
@@ -586,6 +589,7 @@ class Intermitter(Effector):
                 self.register_pause()
                 # ... and turn on locomotion
                 self.current_stridechain_length = self.generate_stridechain_length()
+
                 self.stridechain_start = True
                 self.stop_effector()
                 self.disinhibit_locomotion()
