@@ -9,7 +9,7 @@ from typing import List, Any
 import webcolors
 from mesa.datacollection import DataCollector
 
-from lib.conf.conf import loadConfDict
+from lib.conf.conf import loadConfDict, loadConf
 
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import pygame
@@ -22,7 +22,7 @@ from mesa.time import RandomActivation
 from lib.aux.collecting import TargetedDataCollector
 from lib.envs._space import FoodGrid, DiffusionValueLayer, GaussianValueLayer
 import lib.aux.rendering as ren
-from lib.aux.sampling import sample_agents, get_ref_bout_distros
+from lib.aux.sampling import sample_agents, get_sample_bout_distro
 import lib.aux.functions as fun
 from lib.aux import naming as nam
 from lib.envs._maze import Border
@@ -706,9 +706,9 @@ class LarvaWorld:
         s = self.scaling_factor
         X, Y = self.arena_dims
         # if not from_screen:
-        #     T = [s, 0, 0, s, -s * X / 2, -s * Y / 2]
+        #     T = [sigma, 0, 0, sigma, -sigma * X / 2, -sigma * Y / 2]
         # else:
-        #     T = [s, 0, 0, s, 0, 0]
+        #     T = [sigma, 0, 0, sigma, 0, 0]
         T = [s, 0, 0, s, 0, 0]
         lines = [affine_transform(l, T) for l in lines]
         ps = [p.coords.xy for p in lines]
@@ -925,9 +925,10 @@ class LarvaWorldSim(LarvaWorld):
 
     def _generate_larva_pars(self, N, larva_pars, parameter_dict={}, sample_dataset='reference'):
         if larva_pars['brain']['intermitter_params']:
-            for dist in ['pause_dist', 'stridechain_dist']:
+            for bout,dist in zip(['pause', 'stride'],['pause_dist', 'stridechain_dist']):
                 if larva_pars['brain']['intermitter_params'][dist] == 'fit':
-                    larva_pars['brain']['intermitter_params'][dist] = get_ref_bout_distros(dist, sample_dataset=sample_dataset)
+                    larva_pars['brain']['intermitter_params'][dist] = loadConf(sample_dataset, 'Ref')[bout]['best']
+                    # larva_pars['brain']['intermitter_params'][dist] = get_sample_bout_distro(bout=bout, sample_dataset=sample_dataset)
         flat_larva_pars = fun.flatten_dict(larva_pars)
         sample_pars = [p for p in flat_larva_pars if flat_larva_pars[p] == 'sample']
         if len(sample_pars) >= 1:
@@ -950,12 +951,14 @@ class LarvaWorldSim(LarvaWorld):
 
     def create_larvae(self, larva_pars, parameter_dict={}):
         for group_id, group_pars in larva_pars.items():
+            # print(group_id)
             N=group_pars['N']
             a1, a2 = np.deg2rad(group_pars['orientation_range'])
             orientations = np.random.uniform(low=a1, high=a2, size=N).tolist()
             positions = fun.generate_xy_distro(N=N, **{k:group_pars[k] for k in ['mode', 'shape', 'loc', 'scale']})
+            sample_dataset = group_pars['sample_dataset'] if 'sample_dataset' in list(group_pars.keys()) else self.sample_dataset
             all_pars = self._generate_larva_pars(N, group_pars['model'], parameter_dict=parameter_dict,
-                                                 sample_dataset=self.sample_dataset)
+                                                 sample_dataset=sample_dataset)
 
             for i, (p, o, pars) in enumerate(zip(positions, orientations, all_pars)):
                 self.add_larva(position=p, orientation=o, id=f'{group_id}_{i}', pars=pars, group=group_id,

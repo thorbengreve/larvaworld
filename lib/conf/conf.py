@@ -38,7 +38,7 @@ def get_input(message, itype, default='', accepted=None, range=None):
                 v = bool
                 break
             else:
-                print("Data type must be one of ['str','int','float','bool']")
+                print("Data mode must be one of ['str','int','float','bool']")
         if itype == bool:
             if t in ['n', 'N', 'False', False]:
                 v = False
@@ -52,7 +52,7 @@ def get_input(message, itype, default='', accepted=None, range=None):
         try:
             t = itype(t)
         except:
-            print(f"Input must be of type {itype}! Try again.")
+            print(f"Input must be of mode {itype}! Try again.")
             continue
         if accepted is None and range is None:
             v = t
@@ -236,7 +236,7 @@ def setDataGroup(id=None):
     print(f' -- Step 5 : DataGroup additional parameters')
     while get_input("Add additional parameter?", itype=bool, default=False):
         key = get_input("Enter additional parameter name", itype=str)
-        itype = get_input(f"Enter data type for {key}", itype=type)
+        itype = get_input(f"Enter data mode for {key}", itype=type)
         value = get_input(f"Enter value for {key}", itype=itype)
         DataGroup[key] = value
     saveConf(DataGroup, 'Group')
@@ -258,14 +258,18 @@ def loadConfDict(conf_type):
     return Conf_dict
 
 
-def saveConf(conf, conf_type, id=None):
+def saveConf(conf, conf_type, id=None, mode='overwrite'):
     try:
         conf_dict = loadConfDict(conf_type)
     except:
         conf_dict = {}
     if id is None:
         id = conf['id']
-    conf_dict[id] = conf
+
+    if mode=='update' and id in list(conf_dict.keys()):
+        conf_dict[id].update(conf)
+    else :
+        conf_dict[id] = conf
     saveConfDict(conf_dict, conf_type)
     print(f'{conf_type} Configuration saved under the id : {id}')
 
@@ -359,6 +363,7 @@ if __name__ == '__main__':
         'capture_the_flag': env.flag_env,
         'catch_me': env.catch_me_env,
         'chemotaxis_RL': env.RL_chemorbit_env,
+        'food_at_bottom': env.food_at_bottom_env,
     }
     for k, v in env_dict.items():
         saveConf(v, 'Env', k)
@@ -366,21 +371,21 @@ if __name__ == '__main__':
     mod_dict = {
         'explorer': mod.exploring_larva,
         'navigator': mod.odor_larva,
-        'navigator_x2': mod.odor_larva_x2,
+        'navigator-x2': mod.odor_larva_x2,
         'immobile': mod.immobile_odor_larva,
-        'feeder': mod.feeding_larva,
+        'feeder-explorer': mod.feeding_larva,
         'feeder-navigator': mod.feeding_odor_larva,
-        'feeder-navigator_x2': mod.feeding_odor_larva_x2,
+        'feeder-navigator-x2': mod.feeding_odor_larva_x2,
         'rover': mod.growing_rover,
         'sitter': mod.growing_sitter,
         'imitation': mod.imitation_larva,
         'gamer': mod.flag_larva,
-        'gamer_L': mod.king_larva_L,
-        'gamer_R': mod.king_larva_R,
-        'follower_R': mod.follower_R,
-        'follower_L': mod.follower_L,
-        'RL_learner': mod.RL_odor_larva,
-        'RL_feeder': mod.RL_feed_odor_larva,
+        'gamer-L': mod.king_larva_L,
+        'gamer-R': mod.king_larva_R,
+        'follower-R': mod.follower_R,
+        'follower-L': mod.follower_L,
+        'RL-learner': mod.RL_odor_larva,
+        'RL-feeder': mod.RL_feed_odor_larva,
         'basic_navigator': mod.basic_larva,
         'explorer_3con': mod.exploring_3c_larva,
     }
@@ -433,20 +438,21 @@ if __name__ == '__main__':
         'capture_the_flag': exp.capture_the_flag,
         'catch_me': exp.catch_me,
         'chemotaxis_RL': exp.chemotaxis_RL,
+        'food_at_bottom': exp.food_at_bottom,
     }
     for k, v in exp_dict.items():
         saveConf(v, 'Exp', k)
 
-    reference_datasets ={
-        '' : '',
-        'reference' : 'reference',
-        'Fed' : 'Fed',
-        'Starved' : 'Starved',
-        'Deprived' : 'Deprived',
-    }
-
-    for k, v in reference_datasets.items():
-        saveConf(v, 'Ref', k)
+    # reference_datasets ={
+    #     '' : '',
+    #     'reference' : 'reference',
+    #     'Fed' : 'Fed',
+    #     'Starved' : 'Starved',
+    #     'Deprived' : 'Deprived',
+    # }
+    #
+    # for k, v in reference_datasets.items():
+    #     saveConf(v, 'Ref', k)
 
 def next_idx(exp, type='single'):
     try:

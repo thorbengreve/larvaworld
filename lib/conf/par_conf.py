@@ -145,7 +145,7 @@ def set_ParDb():
             'std': [nam.std, {}, '_std', 'suf', wave, {}],
             'max': [nam.max, {}, '_max', 'suf', sub, {'q': 'max'}],
             'fin': [nam.final, {}, '_fin', 'suf', sub, {'q': 'fin'}],
-            'scal': [nam.scal, {}, 's', 'pre', ast, {}]}
+            'scal': [nam.scal, {}, 'sigma', 'pre', ast, {}]}
         entries = []
         for base in bases:
             for type in types:
@@ -231,6 +231,14 @@ def set_ParDb():
             [nam.scal(nam.straight_dst(cn)), f'{suf}_sstd', subsup('d', suf, 'st*'), subsup(hat('d'), suf, 'st*'),
              l_sc_dst])
         chunk_ar.append([nam.dur(cn), f'{suf}_t', sub('t', cn), sub(hat('t'), cn), l_time])
+        chunk_ar.append([f'{cn}_y', f'{suf}_y', sub('y', cn), sub(hat('y'), cn), l_dst])
+        chunk_ar.append([f'{cn}_x', f'{suf}_x', sub('x', cn), sub(hat('x'), cn), l_dst])
+        chunk_ar.append([f'y_at_{cn}_start', f'{suf}_y0', sub('y0', cn), sub(hat('y0'), cn), l_dst])
+        chunk_ar.append([f'y_at_{cn}_stop', f'{suf}_y1', sub('y1', cn), sub(hat('y1'), cn), l_dst])
+        chunk_ar.append([f'x_at_{cn}_start', f'{suf}_x0', sub('x0', cn), sub(hat('x0'), cn), l_dst])
+        chunk_ar.append([f'x_at_{cn}_stop', f'{suf}_x1', sub('x1', cn), sub(hat('x1'), cn), l_dst])
+        chunk_ar.append([f'{fou}_at_{cn}_start', f'{suf}_fo0', sub('fo0', cn), sub(hat('fo0'), cn), l_angle])
+        chunk_ar.append([f'{fou}_at_{cn}_stop', f'{suf}_fo1', sub('fo1', cn), sub(hat('fo1'), cn), l_angle])
         chunk_ar.append(
             [nam.mean(nam.dur(cn)), f'{suf}_t_mu', sub(bar('t'), cn), sub(bar(hat('t')), cn), l_time])
         chunk_ar.append(
@@ -249,7 +257,7 @@ def set_ParDb():
         chunk_ar.append(
             [nam.id(cn), f'{suf}_id', sub(cn, 'id'), sub(hat(cn), 'id'), l_num])
         chunk_ar.append([nam.dur_ratio(cn), f'{suf}_tr', sub('r', cn), sub(hat('r'), cn), l_time_ratio])
-        chunk_ar.append([nam.num(cn), f'{suf}_N', sub('N', f'{cn}s'), sub(hat('N'), f'{cn}s'), f'# {cn}s'])
+        chunk_ar.append([nam.num(cn), f'{suf}_N', sub('N', f'{cn}sigma'), sub(hat('N'), f'{cn}sigma'), f'# {cn}sigma'])
     chunk_ar = np.array(chunk_ar)
 
     temp_dsp = [[dsp, 'disp', 'disp', hat('disp')],
@@ -258,14 +266,14 @@ def set_ParDb():
     dsp_ar = []
     for (fn, sn, sym, esym) in temp_dsp:
         dsp_ar.append([fn, sn, sym, esym, l_dst])
-        dsp_ar.append([nam.scal(fn), f's{sn}', sup(sym, '*'), sup(esym, '*'), l_sc_dst])
+        dsp_ar.append([nam.scal(fn), f'sigma{sn}', sup(sym, '*'), sup(esym, '*'), l_sc_dst])
         dsp_ar.append([nam.mean(fn), f'{sn}_mu', bar(sym), bar(esym), l_dst])
-        dsp_ar.append([nam.scal(nam.mean(fn)), f's{sn}_mu', sup(bar(sym), '*'), sup(bar(esym), '*'), l_sc_dst])
+        dsp_ar.append([nam.scal(nam.mean(fn)), f'sigma{sn}_mu', sup(bar(sym), '*'), sup(bar(esym), '*'), l_sc_dst])
         dsp_ar.append([nam.max(fn), f'{sn}_max', sub(sym, 'max'), sub(esym, 'max'), l_dst])
         dsp_ar.append(
-            [nam.scal(nam.max(fn)), f's{sn}_max', subsup(sym, 'max', '*'), subsup(esym, 'max', '*'), l_sc_dst])
+            [nam.scal(nam.max(fn)), f'sigma{sn}_max', subsup(sym, 'max', '*'), subsup(esym, 'max', '*'), l_sc_dst])
         dsp_ar.append([nam.final(fn), f'{sn}_fin', sub(sym, 'fin'), sub(esym, 'fin'), l_dst])
-        dsp_ar.append([nam.scal(nam.final(fn)), f's{sn}_fin', subsup(sym, 'fin', '*'), subsup(esym, 'fin', '*'),
+        dsp_ar.append([nam.scal(nam.final(fn)), f'sigma{sn}_fin', subsup(sym, 'fin', '*'), subsup(esym, 'fin', '*'),
                        l_sc_dst])
 
     dsp_ar = np.array(dsp_ar)
@@ -432,6 +440,20 @@ def set_ParDb():
                            'unit': 'Turner activation',
                            # 'collect' : 'turner_activation'
                            }
+
+    par_db.loc['y'] = {'par': 'y',
+                           'symbol': '$y$',
+                           'exp_symbol': '$\hat{y}$',
+                           'unit': 'Y position $(mm)$',
+                           # 'collect' : 'turner_activation'
+                           }
+
+    par_db.loc['x'] = {'par': 'x',
+                       'symbol': '$x$',
+                       'exp_symbol': '$\hat{x}$',
+                       'unit': 'X position $(mm)$',
+                       # 'collect' : 'turner_activation'
+                       }
 
     # par_db.loc['deb_f_deviation'] = {'par': 'turner_activation',
     #                        'symbol': '$A_{tur}$',
@@ -678,7 +700,7 @@ if __name__ == '__main__':
     # Use this to update the database
     par_db = set_ParDb()
     set_ParShelve(par_db)
-    # print(type(get_par('c_odor1')['dtype']))
+    # print(mode(get_par('c_odor1')['dtype']))
     # print(get_par_dict(short='fov'))
     # print(par_db.loc['g_odor1'])
-    print(par_db.loc['l_mu'])
+    print(par_db.loc['tur_y1'])
