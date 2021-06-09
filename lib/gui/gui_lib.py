@@ -1479,8 +1479,9 @@ class GraphList:
 
     def init_canvas(self, name):
         canvas_key = f'{name}_CANVAS'
-        figure_w, figure_h = 800, 800
-        canvas = sg.Col([[sg.Canvas(size=(figure_w, figure_h), key=canvas_key, background_color='Lightblue')]], **col_kws)
+        s = (1200, 1200)
+        canvas = sg.Col([[sg.Canvas(size=s, key=canvas_key, background_color='Lightblue')]],
+                        scrollable=True,vertical_scroll_only=False,expand_y=True, expand_x=True)
         return canvas, canvas_key
 
     def draw_fig(self, window, fig):
@@ -1771,6 +1772,8 @@ def save_gui_conf(window, conf, conf_type):
         conf_id = v[f'{cap}_ID']
         saveConf(conf, conf_type, conf_id)
         window[f'{cap}_CONF'].update(values=list(loadConfDict(conf_type).keys()), value=conf_id)
+        if f'{cap}_CONF2' in window.element_list():
+            window[f'{cap}_CONF2'].update(values=list(loadConfDict(conf_type).keys()), value=conf_id)
         # window[f'{cap}_CONF'].update()
 
 
