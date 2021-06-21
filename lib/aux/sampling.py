@@ -91,7 +91,7 @@ class BoutGenerator :
         self.dt=dt
         ddfs = {
             'powerlaw': {'cdf': powerlaw_cdf, 'pdf': powerlaw_pdf, 'args': ['alpha'], 'rvs': trunc_powerlaw},
-            'exponential': {'cdf': exponential_cdf, 'pdf': exponential_pdf, 'args': ['beta'], 'rvs': lognormal_discrete},
+            'exponential': {'cdf': exponential_cdf, 'pdf': exponential_pdf, 'args': ['beta'], 'rvs': exponential_discrete},
             'lognormal': {'cdf': lognorm_cdf, 'pdf': lognormal_pdf, 'args': ['mu', 'sigma'], 'rvs': lognormal_discrete},
             'logNpow': {'cdf': logNpow_cdf, 'pdf': logNpow_pdf,
                         'args': ['alpha', 'mu', 'sigma', 'switch', 'ratio', 'overlap'], 'rvs': logNpow_distro}
@@ -146,6 +146,16 @@ def trunc_powerlaw(alpha, range, dt=1, **kwargs):
     pk /= pk.sum()
 
     return stats.rv_discrete(values=(xx, pk))
+
+def exponential_discrete(beta, range, dt=1, **kwargs) :
+    xmin, xmax = range
+    x0, x1 = int(xmin / dt), int(xmax / dt)
+    xx = np.arange(x0, x1 + 1)
+    x = xx * dt
+    pmf = exponential_pdf(x, xmin, beta)
+    pmf /= pmf.sum()
+    return stats.rv_discrete(values=(xx, pmf))
+
 
 def lognormal_discrete2(mu, sigma, range, dt=1, **kwargs):
     xmin,xmax=range
@@ -211,7 +221,7 @@ if __name__ == '__main__':
     d_id='Fed'
     bouts=['stride', 'pause']
     # bout='pause'
-    # e=pd.read_csv(f'{RefFolder}/Starved/data/endpoint_data.csv', index_col=0)
+    # e=pd.read_csv(f'{RefFolder}/Starved/data/end.csv', index_col=0)
 
     fr=11.27
     dt=1/fr

@@ -1,10 +1,12 @@
 import argparse
 import sys
 import time
+import numpy as np
 
 sys.path.insert(0, '..')
 
-from lib.sim.single_run import run_sim, sim_analysis, get_exp_conf
+from lib.sim.single_run import run_sim, get_exp_conf
+from lib.sim.analysis import sim_analysis
 from lib.conf.conf import next_idx, loadConfDict
 from lib.aux import argparsers as prs
 
@@ -29,11 +31,7 @@ life_kwargs = prs.get_life_kwargs(args)
 vis_kwargs = prs.get_vis_kwargs(args)
 place_kwargs = prs.get_place_kwargs(args)
 
-if sim_kwargs['sim_id'] is None:
-    idx = next_idx(exp_type)
-    sim_kwargs['sim_id'] = f'{exp_type}_{idx}'
-if sim_kwargs['path'] is None:
-    sim_kwargs['path'] = f'single_runs/{exp_type}'
+
 
 exp_conf = get_exp_conf(exp_type,  sim_kwargs, life_kwargs, enrich=True, **place_kwargs)
 
@@ -44,4 +42,4 @@ if analysis:
 
 e = time.time()
 if d is not None:
-    print(f'Simulation completed in {e - s}')
+    print(f'    Single run completed in {np.round(e - s).astype(int)} seconds!')

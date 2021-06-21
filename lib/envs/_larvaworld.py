@@ -10,6 +10,7 @@ import webcolors
 from mesa.datacollection import DataCollector
 
 from lib.conf.conf import loadConfDict, loadConf
+from lib.model.agents._larva import LarvaSim, LarvaReplay
 
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import pygame
@@ -27,8 +28,7 @@ import lib.aux.functions as fun
 from lib.aux import naming as nam
 from lib.envs._maze import Border
 import lib.conf.dtype_dicts as dtypes
-from lib.model import *
-from lib.model._agent import LarvaworldAgent
+from lib.model.agents._agent import LarvaworldAgent, Food, Larva
 from lib.sim.input_lib import evaluate_input, evaluate_graphs
 
 
@@ -38,7 +38,7 @@ class LarvaWorld:
         pygame.init()
         max_screen_height = pygame.display.Info().current_h
         cls.sim_screen_dim = int(max_screen_height * 2 / 3)
-        """Create a new model object and instantiate its RNG automatically."""
+        """Create a new model object_class and instantiate its RNG automatically."""
         cls._seed = kwargs.get("seed", None)
         cls.random = random.Random(cls._seed)
         return object.__new__(cls)
@@ -53,6 +53,9 @@ class LarvaWorld:
                  progress_bar=None,
                  space_in_mm = False
                  ):
+        # name='basic'
+        # self.par_dict = build_par_dict(dt=dt)
+        # self.collection = Collection(name, par_dict=self.par_dict)
         self.space_in_mm = space_in_mm
         self.progress_bar = progress_bar
         self.vis_kwargs = vis_kwargs
@@ -593,14 +596,19 @@ class LarvaWorld:
             self.CS_trial_counter=1
             self.UCS_trial_counter=0
             print()
-            print(f'Training trial {self.CS_trial_counter} with CS started at {self.sim_clock.minute} : {self.sim_clock.second}')
+            print(f'Training trial {self.CS_trial_counter} with CS started at {self.sim_clock.minute}:{self.sim_clock.second}')
             for f in self.get_food():
                 if f.unique_id == 'CS_source':
                     self.CS_source = f
                 elif f.unique_id == 'UCS_source':
                     self.UCS_source = f
+            # print(self.CS_source.odor_intensity, self.UCS_source.odor_intensity)
             self.CS_source.odor_intensity = 2.0
             self.UCS_source.odor_intensity = 0.0
+            self.CS_source.set_odor_dist()
+            self.UCS_source.set_odor_dist()
+            # print(self.CS_source.odor_intensity, self.UCS_source.odor_intensity)
+            # raise
 
     def check_end_condition(self):
         if self.experiment == 'capture_the_flag':
@@ -657,27 +665,37 @@ class LarvaWorld:
             self.sim_state.set_text(f'L:{np.round(self.score["Left"],1)} vs R:{np.round(self.score["Right"],1)}')
 
         elif self.experiment == 'odor_pref_train':
+
             if self.sim_clock.timer_opened :
                 self.UCS_trial_counter+=1
                 print()
                 print(f'Starvation trial {self.UCS_trial_counter} with UCS started at {self.sim_clock.minute}:{self.sim_clock.second}')
                 self.CS_source.odor_intensity=0.0
                 self.UCS_source.odor_intensity=2.0
+                self.CS_source.set_odor_dist()
+                self.UCS_source.set_odor_dist()
                 self.move_larvae_to_center()
             if self.sim_clock.timer_closed :
                 self.CS_trial_counter += 1
-                print()
-                print(f'Training trial {self.CS_trial_counter} with CS started at {self.sim_clock.minute}:{self.sim_clock.second}')
-                self.CS_source.odor_intensity = 2.0
-                self.UCS_source.odor_intensity = 0.0
-                self.move_larvae_to_center()
-            if self.sim_clock.next_on is None and self.sim_clock.next_off is None :
-                print()
-                print(f'Test trial started at {self.sim_clock.minute}:{self.sim_clock.second}')
-                self.CS_source.odor_intensity = 2.0
-                self.UCS_source.odor_intensity = 2.0
-                self.move_larvae_to_center()
+                if self.CS_trial_counter<=3 :
+                    print()
+                    print(f'Training trial {self.CS_trial_counter} with CS started at {self.sim_clock.minute}:{self.sim_clock.second}')
+                    self.CS_source.odor_intensity = 2.0
+                    self.UCS_source.odor_intensity = 0.0
+                    self.CS_source.set_odor_dist()
+                    self.UCS_source.set_odor_dist()
+                    self.move_larvae_to_center()
+                else :
+                    # if self.sim_clock.next_on is None and self.sim_clock.next_off is None :
+                    print()
+                    print(f'Test trial started at {self.sim_clock.minute}:{self.sim_clock.second}')
+                    self.CS_source.odor_intensity = 2.0
+                    self.UCS_source.odor_intensity = 2.0
+                    self.CS_source.set_odor_dist()
+                    self.UCS_source.set_odor_dist()
+                    self.move_larvae_to_center()
             if self.sim_clock.minute>=35 :
+                print()
                 print(f'Test trial ended at {self.sim_clock.minute}:{self.sim_clock.second}')
 
     def move_larvae_to_center(self) :
@@ -827,20 +845,18 @@ class LarvaWorldSim(LarvaWorld):
         if collected_pars is None:
             collected_pars = {'step': [], 'endpoint': [], 'tables' : {} }
 
-        self.starvation_hours = life_params['starvation_hours']
-        if self.starvation_hours is None:
-            self.starvation_hours = []
+        self.epochs = life_params['epochs']
+        if self.epochs is None:
+            self.epochs = []
         self.hours_as_larva = life_params['hours_as_larva']
-        self.deb_base_f = life_params['deb_base_f']
+        self.substrate_quality = life_params['substrate_quality']
 
-        self.deb_starvation_hours = [[s0, np.clip(s1, a_min=s0, a_max=self.hours_as_larva)] for [s0, s1] in
-                                     self.starvation_hours if s0 < self.hours_as_larva]
-        self.sim_starvation_hours = [
+        self.sim_epochs = [
             [np.clip(s0 - self.hours_as_larva, a_min=0, a_max=+np.inf), s1 - self.hours_as_larva] for
-            [s0, s1] in self.starvation_hours if s1 > self.hours_as_larva]
-        if len(self.sim_starvation_hours) > 0:
-            on_ticks = [int(s0 * 60 * 60 / self.dt) for [s0, s1] in self.sim_starvation_hours]
-            off_ticks = [int(s1 * 60 * 60 / self.dt) for [s0, s1] in self.sim_starvation_hours]
+            [s0, s1] in self.epochs if s1 > self.hours_as_larva]
+        if len(self.sim_epochs) > 0:
+            on_ticks = [int(s0 * 60 * 60 / self.dt) for [s0, s1] in self.sim_epochs]
+            off_ticks = [int(s1 * 60 * 60 / self.dt) for [s0, s1] in self.sim_epochs]
             self.sim_clock.set_timer(on_ticks, off_ticks)
         self.starvation = self.sim_clock.timer_on
         self.count_bend_errors = count_bend_errors
@@ -860,36 +876,6 @@ class LarvaWorldSim(LarvaWorld):
 
         self.set_end_condition()
 
-    # def prepare_flies(self, timesteps):
-    #     for t in range(timesteps):
-    #         self.mock_step()
-        #     # for g in self.get_flies():
-        #     # if np.random.choice([0, 1]) == 0:
-        #     #     g.compute_next_action()
-        # if Nsec<self.dt :
-        #     return
-        # for g in self.get_flies():
-        #     g.turner.prepare_turner(Nsec)
-        # try:
-        #     g.crawler.iteration_counter = 0
-        #     g.crawler.total_t = 0
-        #     g.crawler.t = 0
-        # except:
-        #     pass
-        # try:
-        #     g.intermitter.reset()
-        # except:
-        #     pass
-        # try:
-        #     g.reset_feeder()
-        # except:
-        #     pass
-        # try:
-        #     g.set_ang_activity(0.0)
-        #     g.set_lin_activity(0.0)
-        # except :
-        #     pass
-        # raise ValueError
 
     def prepare_odor_layer(self, timesteps):
         for i in range(timesteps):
@@ -961,8 +947,11 @@ class LarvaWorldSim(LarvaWorld):
                                                  sample_dataset=sample_dataset)
 
             for i, (p, o, pars) in enumerate(zip(positions, orientations, all_pars)):
-                self.add_larva(position=p, orientation=o, id=f'{group_id}_{i}', pars=pars, group=group_id,
+                l=self.add_larva(position=p, orientation=o, id=f'{group_id}_{i}', pars=pars, group=group_id,
                                default_color=group_pars['default_color'])
+
+
+
 
     def step(self):
 
@@ -970,7 +959,7 @@ class LarvaWorldSim(LarvaWorld):
         self.sim_clock.tick_clock()
         self.Nticks += 1
 
-        if len(self.sim_starvation_hours) > 0:
+        if len(self.sim_epochs) > 0:
             self.starvation = self.sim_clock.timer_on
             if self.sim_clock.timer_opened:
                 if self.food_grid is not None:
@@ -993,6 +982,11 @@ class LarvaWorldSim(LarvaWorld):
             self.space.Step(self.dt, self._sim_velocity_iterations, self._sim_position_iterations)
             self.update_trajectories(self.get_flies())
         self.larva_step_col.collect(self)
+        for c in self.group_collectors:
+            c.collect()
+        # for l in self.get_flies():
+        #     # l.compute_next_action()
+        #     l.collector.collect()
         # if self.table_collector is not None and self.Nticks%(int(3*60/self.dt))==0 :
         #     for name, table in self.table_collector.tables.items() :
         #         cols=list(table.keys())
@@ -1093,7 +1087,7 @@ class LarvaWorldReplay(LarvaWorld):
                                p not in fun.flatten_list(self.dataset.contour_xy) + fun.flatten_list(
                                    self.dataset.points_xy)]
 
-        # self.starting_tick = self.step_data.index.unique('Step')[0]
+        # self.starting_tick = self.step.index.unique('Step')[0]
         try:
             self.lengths = self.endpoint_data['length'].values
         except:

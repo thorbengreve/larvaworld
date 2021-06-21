@@ -47,26 +47,27 @@ growth = {
 rovers_sitters = {
 
     'env_params': 'rovers_sitters',
-    'sim_params': dtypes.get_dict('sim_params', sim_dur=180.0, dt=0.2),
-    'collections': ['feeder', 'deb', 'gut'],
+    'sim_params': dtypes.get_dict('sim_params', sim_dur=180.0, dt=0.1),
+    'collections': ['deb', 'gut'],
+    # 'collections': ['feeder', 'deb', 'gut'],
     # 'age_in_hours' : 0
-    # 'starvation_hours': [[24, 48]]
+    # 'epochs': [[24, 48]]
 }
-odor_pref = {
-    'env_params': 'odor_preference',
-    'sim_params': dtypes.get_dict('sim_params'),
-    'collections': ['olfactor'],
-}
+# odor_pref = {
+#     'env_params': 'odor_preference',
+#     'sim_params': dtypes.get_dict('sim_params', sim_dur=5.0),
+#     'collections': ['olfactor'],
+# }
 
 odor_pref_test = {
     'env_params': 'odor_pref_test',
-    'sim_params': dtypes.get_dict('sim_params'),
+    'sim_params': dtypes.get_dict('sim_params', sim_dur=5.0),
     'collections': ['olfactor'],
 }
 
 odor_pref_test_on_food = {
     'env_params': 'odor_pref_test_on_food',
-    'sim_params': dtypes.get_dict('sim_params'),
+    'sim_params': dtypes.get_dict('sim_params', sim_dur=5.0),
     'collections': ['olfactor', 'feeder'],
 }
 
@@ -74,11 +75,17 @@ odor_pref_train = {
     'env_params': 'odor_pref_train',
     'sim_params': dtypes.get_dict('sim_params', sim_dur=35.0),
     'collections': ['olfactor', 'memory'],
-    'life_params': dtypes.get_dict('life', starvation_hours=[(1 / 12, 2 / 12), (3 / 12, 4 / 12), (5 / 12, 6 / 12)])
+    'life_params': dtypes.get_dict('life', epochs=[(1 / 12, 2 / 12), (3 / 12, 4 / 12), (5 / 12, 6 / 12)])
 }
 
 odor_pref_RL = {
     'env_params': 'odor_preference_RL',
+    'sim_params': dtypes.get_dict('sim_params', sim_dur=105.0),
+    'collections': ['memory'],
+}
+
+RL_4corners = {
+    'env_params': '4corners',
     'sim_params': dtypes.get_dict('sim_params'),
     'collections': ['memory'],
 }

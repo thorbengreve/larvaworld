@@ -153,7 +153,7 @@ def setEnrichConf():
                      'ang_analysis': ang_analysis,
                      'lin_analysis': lin_analysis,
                      'dispersion_starts': dispersion_starts,
-                     'bout_annotation': bout_annotation,
+                     'bouts': bout_annotation,
                      'mode': mode}
     return enrich_config
 
@@ -266,9 +266,13 @@ def saveConf(conf, conf_type, id=None, mode='overwrite'):
     if id is None:
         id = conf['id']
 
-    if mode=='update' and id in list(conf_dict.keys()):
-        conf_dict[id].update(conf)
-    else :
+    if id in list(conf_dict.keys()):
+        for k, v in conf.items():
+            if type(k) == dict and k in list(conf_dict[id].keys()) and mode == 'update':
+                conf_dict[id][k].update(conf[k])
+            else:
+                conf_dict[id][k] = v
+    else:
         conf_dict[id] = conf
     saveConfDict(conf_dict, conf_type)
     print(f'{conf_type} Configuration saved under the id : {id}')
@@ -364,6 +368,7 @@ if __name__ == '__main__':
         'catch_me': env.catch_me_env,
         'chemotaxis_RL': env.RL_chemorbit_env,
         'food_at_bottom': env.food_at_bottom_env,
+        '4corners': env.RL_4corners_env,
     }
     for k, v in env_dict.items():
         saveConf(v, 'Env', k)
@@ -377,7 +382,9 @@ if __name__ == '__main__':
         'feeder-navigator': mod.feeding_odor_larva,
         'feeder-navigator-x2': mod.feeding_odor_larva_x2,
         'rover': mod.growing_rover,
+        'mock_rover': mod.mock_growing_rover,
         'sitter': mod.growing_sitter,
+        'mock_sitter': mod.mock_growing_sitter,
         'imitation': mod.imitation_larva,
         'gamer': mod.flag_larva,
         'gamer-L': mod.king_larva_L,
@@ -425,7 +432,7 @@ if __name__ == '__main__':
         'odor_pref_test': exp.odor_pref_test,
         'odor_pref_test_on_food': exp.odor_pref_test_on_food,
         'odor_pref_train': exp.odor_pref_train,
-        'odor_preference_RL': exp.odor_pref_RL,
+        'odor_pref_RL': exp.odor_pref_RL,
         'patchy_food': exp.patchy_food,
         'uniform_food': exp.uniform_food,
         'food_grid': exp.food_grid,
@@ -439,20 +446,11 @@ if __name__ == '__main__':
         'catch_me': exp.catch_me,
         'chemotaxis_RL': exp.chemotaxis_RL,
         'food_at_bottom': exp.food_at_bottom,
+        '4corners': exp.RL_4corners,
     }
     for k, v in exp_dict.items():
         saveConf(v, 'Exp', k)
 
-    # reference_datasets ={
-    #     '' : '',
-    #     'reference' : 'reference',
-    #     'Fed' : 'Fed',
-    #     'Starved' : 'Starved',
-    #     'Deprived' : 'Deprived',
-    # }
-    #
-    # for k, v in reference_datasets.items():
-    #     saveConf(v, 'Ref', k)
 
 def next_idx(exp, type='single'):
     try:

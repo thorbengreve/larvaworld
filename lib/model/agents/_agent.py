@@ -1,8 +1,6 @@
-import time
 from copy import deepcopy
 import numpy as np
 from Box2D import Box2D, b2ChainShape
-from matplotlib.patches import Circle
 from scipy.spatial.distance import euclidean
 from scipy.stats import multivariate_normal
 from shapely import affinity
@@ -10,6 +8,8 @@ from shapely.geometry import Point, Polygon
 
 import lib.aux.functions as fun
 import lib.aux.rendering as ren
+from lib.model.DEB.deb import Substrate
+
 
 class LarvaworldAgent:
     def __init__(self,unique_id: str,model, pos=None, default_color=None, radius=None,
@@ -187,9 +187,20 @@ class Larva(LarvaworldAgent):
     def first_odor_concentration_change(self):
         return list(self.brain.olfactor.dCon.values())[0]
 
+    # @property
+    # def length_in_mm(self):
+    #     return self.get_real_length() * 1000
+
     @property
     def length_in_mm(self):
         return self.get_real_length() * 1000
+        # from lib.conf.par import TemporalPar, FractionPar
+        # k1 = TemporalPar(name='cum_dur')
+        # k2 = TemporalPar(name='cum_dur')
+        # k=FractionPar(name='some', exists=False, numerator=k1, denominator=k2)
+        # v = k.get_from(self)
+        # print(v)
+        # return v
 
     @property
     def mass_in_mg(self):
@@ -293,7 +304,7 @@ class Larva(LarvaworldAgent):
 
     @property
     def num_strides(self):
-        return self.brain.crawler.iteration_counter
+        return self.brain.crawler.iteration_counter if self.brain.crawler is not None else self.brain.intermitter.stride_counter
 
     @property
     def stride_dur_ratio(self):
@@ -361,7 +372,11 @@ class Larva(LarvaworldAgent):
 
     @property
     def num_feeds(self):
-        return self.brain.feeder.iteration_counter
+        return self.brain.feeder.iteration_counter if self.brain.feeder is not None else self.brain.intermitter.feed_counter
+
+    @property
+    def mean_feed_freq(self):
+        return self.num_feeds / self.cum_dur
 
     @property
     def feed_dur_ratio(self):
@@ -376,28 +391,53 @@ class Larva(LarvaworldAgent):
         return self.deb.get_f()
 
     @property
+    def deb_f_mean(self):
+        return np.mean(self.deb.dict['f'])
+
+    @property
     def gut_occupancy(self):
-        return self.deb.get_gut_occupancy()
+        return self.deb.gut.get_gut_occupancy()
+
+    @property
+    def ingested_body_mass_ratio(self):
+        return self.deb.gut.ingested_mass()/self.deb.Ww*100
+
+    @property
+    def ingested_body_volume_ratio(self):
+        return self.deb.gut.ingested_volume()/self.deb.V *100
+
+    @property
+    def ingested_gut_volume_ratio(self):
+        return self.deb.gut.ingested_volume() / (self.deb.V*self.deb.gut.V_gm) * 100
+
+    @property
+    def ingested_body_area_ratio(self):
+        return (self.deb.gut.ingested_volume()/self.deb.V)**(1/2)*100
+        # return (self.deb.gut.ingested_volume()/self.deb.V)**(2/3)*100
 
     @property
     def amount_absorbed(self):
-        return self.deb.get_M_absorbed()
+        return self.deb.gut.absorbed_mass('mg')
 
     @property
     def amount_faeces(self):
-        return self.deb.get_M_faeces()
+        return self.deb.gut.get_M_faeces()
 
     @property
     def faeces_ratio(self):
-        return self.deb.get_R_faeces()
+        return self.deb.gut.get_R_faeces()
 
     @property
     def food_absorption_efficiency(self):
-        return self.deb.get_R_absorbed()
+        return self.deb.gut.get_R_absorbed()
 
     @property
     def deb_f_deviation(self):
         return self.deb.get_f() - 1
+
+    @property
+    def deb_f_deviation_mean(self):
+        return np.mean(np.array(self.deb.dict['f']) - 1)
 
     @property
     def reserve(self):
@@ -501,15 +541,19 @@ class Source(LarvaworldAgent):
             return p
 
 class Food(Source):
-    def __init__(self, amount=1.0, quality=1.0,default_color=None,density=0.17, **kwargs):
+    def __init__(self, amount=1.0, quality=1.0,default_color=None,type='standard', **kwargs):
         # print(kwargs)
         if default_color is None :
             default_color = 'green'
         super().__init__(default_color=default_color,**kwargs)
         self.initial_amount = amount
         self.quality = quality
-        self.density = density
         self.amount = self.initial_amount
+        self.type = type
+        self.substrate = Substrate(type=type)
+
+    # def get_mol(self, V, **kwargs):
+    #     return self.substrate.get_mol(V=V, quality=self.quality, **kwargs)
 
     def get_amount(self):
         return self.amount
@@ -526,6 +570,7 @@ class Food(Source):
         return np.min([amount, prev_amount])
 
     def draw(self, viewer, filled=True):
+
         # if self.get_shape() is None :
         #     return
         p, c, r = self.get_position(), self.color, self.radius
