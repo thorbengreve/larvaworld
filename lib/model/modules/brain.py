@@ -35,7 +35,7 @@ class DefaultBrain(Brain):
         self.crawler = Crawler(dt=dt, **c['crawler_params']) if m['crawler'] else None
         self.turner = Turner(dt=dt, **c['turner_params']) if m['turner'] else None
         self.feeder = Feeder(dt=dt, model=self.agent.model, **c['feeder_params']) if m['feeder'] else None
-        self.intermitter = Intermitter(dt=dt, crawler=self.crawler, feeder=self.feeder,
+        self.intermitter = Intermitter(brain=self, dt=dt, crawler=self.crawler, feeder=self.feeder,
                                            **c['intermitter_params']) if m['intermitter'] else None
         o=self.olfactor = Olfactor(dt=dt, **c['olfactor_params']) if m['olfactor'] else None
         # self.memory = SimpleMemory(brain=self, dt=dt, decay_coef=o.decay_coef, gain=o.gain, **c['memory_params']) if m['memory'] else None
@@ -54,7 +54,7 @@ class DefaultBrain(Brain):
                                                                             self.olfactor.get_dCon(),
                                                                             reward,
                                                                             self.olfactor.decay_coef)
-        lin = self.crawler.step(self.agent.get_sim_length()) if self.crawler else 0
+        lin = self.crawler.step(self.agent.sim_length) if self.crawler else 0
         self.olfactory_activation = self.olfactor.step(self.sense_odors(pos)) if self.olfactor else 0
         # print(np.round(list(self.sense_odors(pos).values()),4))
         # ... and finally step the turner...

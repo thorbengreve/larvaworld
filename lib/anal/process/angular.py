@@ -11,9 +11,8 @@ from lib.anal.process.store import create_par_distro_dataset
 def compute_spineangles(s, angles, points, config=None, chunk_only=None, mode='full'):
     r = config['front_body_ratio'] if config is not None else 0.5
     bend_angles = angles[:int(np.round(r * len(angles)))]
-    if chunk_only is None:
-        s = s.copy(deep=False)
-    else:
+    # print(bend_angles)
+    if chunk_only is not None:
         print(f'Computation restricted to {chunk_only} chunks')
         s = s.loc[s[nam.id(chunk_only)].dropna().index.values].copy(deep=False)
     xy = [nam.xy(points[i]) for i in range(len(points))]
@@ -44,7 +43,7 @@ def compute_bend(s, points, angles, config=None, mode='minimal'):
         return
     elif b_conf == 'from_vectors':
         print(f'Computing bending angle as the difference between front and rear orients')
-        s['bend'] = s.apply(lambda r: fun.angle_dif(r['front_orientation'], r['rear_orientation']), axis=1)
+        s['bend'] = s.apply(lambda r: fun.angle_dif(r[nam.orient('front')], r[nam.orient('rear')]), axis=1)
     elif b_conf == 'from_angles':
         bend_angles = compute_spineangles(s, angles, points, config, mode=mode)
         print(f'Computing bending angle as the sum of the first {len(bend_angles)} front angles')
@@ -88,7 +87,7 @@ def compute_orientations(s, points, segs, config=None, mode='full'):
     c = np.zeros([2, Nticks]) * np.nan
     for i in range(Nticks):
         c[:, i] = np.array([fun.angle_to_x_axis(xy_ar[i, 2 * j, :], xy_ar[i, 2 * j + 1, :]) for j in range(2)])
-    for z, a in enumerate(['front_orientation', 'rear_orientation']):
+    for z, a in enumerate([nam.orient('front'), nam.orient('rear')]):
         s[a] = c[z].T
     if mode == 'full':
         N = len(segs)
@@ -109,7 +108,7 @@ def compute_orientations(s, points, segs, config=None, mode='full'):
 
 
 def unwrap_orientations(s, segs):
-    pars = list(set([p for p in ['front_orientation', 'rear_orientation'] + nam.orient(segs) if p in s.columns.values]))
+    pars = list(set([p for p in [nam.orient('front'), nam.orient('rear')] + nam.orient(segs) if p in s.columns.values]))
     for p in pars:
         for id in s.index.unique('AgentID').values:
             ts = s.loc[(slice(None), id), p].values
@@ -118,7 +117,7 @@ def unwrap_orientations(s, segs):
 
 
 def compute_angular_metrics(s, dt, segs, angles, mode='minimal'):
-    ang_pars = ['front_orientation', 'rear_orientation', 'bend']
+    ang_pars = [nam.orient('front'), nam.orient('rear'), 'bend']
     ids = s.index.unique('AgentID').values
     Nids = len(ids)
     Nticks = len(s.index.unique('Step'))
@@ -164,7 +163,7 @@ def angular_processing(s, e, dt, Npoints, config=None, recompute=False, mode='mi
     Nsegs = np.clip(N - 1, a_min=0, a_max=None)
     segs = nam.midline(Nsegs, type='seg')
 
-    ang_pars = ['front_orientation', 'rear_orientation', 'bend']
+    ang_pars = [nam.orient('front'), nam.orient('rear'), 'bend']
     if set(ang_pars).issubset(s.columns.values) and not recompute:
         print('Orientation and bend are already computed. If you want to recompute them, set recompute to True')
     else:

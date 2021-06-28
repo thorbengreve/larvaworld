@@ -128,6 +128,7 @@ class LarvaworldAgent:
 
 class Larva(LarvaworldAgent):
     def __init__(self, unique_id, model, pos=None, radius=None, default_color=None, **kwargs):
+        # print(unique_id, pos)
         if default_color is None:
             default_color = model.generate_larva_color()
         super().__init__(unique_id=unique_id, model=model, default_color=default_color, pos=pos, radius=radius,
@@ -165,6 +166,18 @@ class Larva(LarvaworldAgent):
     def first_odor_concentration(self):
         return list(self.brain.olfactor.Con.values())[0]
 
+    # @property
+    # def odor_Con0(self):
+    #     return list(self.brain.olfactor.Con.values())[0]
+    #
+    # @property
+    # def odor_Con1(self):
+    #     return list(self.brain.olfactor.Con.values())[1]
+    #
+    # @property
+    # def odor_Con2(self):
+    #     return list(self.brain.olfactor.Con.values())[2]
+
     @property
     def second_odor_concentration(self):
         return list(self.brain.olfactor.Con.values())[1]
@@ -181,52 +194,67 @@ class Larva(LarvaworldAgent):
     def best_olfactor_decay(self):
         return self.brain.memory.best_decay_coef
 
-    best_olfactor_decay
 
     @property
     def cum_reward(self):
         return self.brain.memory.rewardSum
 
     @property
+    def dt(self):
+        return self.model.dt
+
+    @property
     def first_odor_concentration_change(self):
         return list(self.brain.olfactor.dCon.values())[0]
+
+    @property
+    def second_odor_concentration_change(self):
+        return list(self.brain.olfactor.dCon.values())[1]
 
     # @property
     # def length_in_mm(self):
     #     return self.get_real_length() * 1000
 
-    @property
-    def length_in_mm(self):
-        return self.get_real_length() * 1000
-        # from lib.conf.par import TemporalPar, FractionPar
-        # k1 = TemporalPar(name='cum_dur')
-        # k2 = TemporalPar(name='cum_dur')
-        # k=FractionPar(name='some', exists=False, numerator=k1, denominator=k2)
-        # v = k.get_from(self)
-        # print(v)
-        # return v
+    # @property
+    # def length_in_mm(self):
+    #     return self.real_length * 1000
+    #     # from lib.conf.par import TemporalPar, FractionPar
+    #     # k1 = TemporalPar(name='cum_dur')
+    #     # k2 = TemporalPar(name='cum_dur')
+    #     # k=FractionPar(name='some', exists=False, numerator=k1, denominator=k2)
+    #     # v = k.get_from(self)
+    #     # print(v)
+    #     # return v
 
-    @property
-    def mass_in_mg(self):
-        return self.get_real_mass() * 1000
+    # @property
+    # def mass_in_mg(self):
+    #     return self.get_real_mass() * 1000
 
     @property
     def scaled_amount_eaten(self):
         return self.amount_eaten / self.get_real_mass()
 
-    @property
-    def orientation_to_center_in_deg(self):
-        return fun.angle_dif(np.rad2deg(self.get_head().get_normalized_orientation()),
-                             fun.angle_to_x_axis(self.get_position(), (0, 0),
-                                                 in_deg=True), in_deg=True)
+    # @property
+    # def orientation_to_center_in_deg(self):
+    #     return fun.angle_dif(np.rad2deg(self.get_head().get_normalized_orientation()),
+    #                          fun.angle_to_x_axis(self.get_position(), (0, 0),
+    #                                              in_deg=True), in_deg=True)
 
     @property
     def x(self):
-        return self.pos[0] * 1000 / self.model.scaling_factor
+        return self.pos[0] / self.model.scaling_factor
 
     @property
     def y(self):
-        return self.pos[1] * 1000 / self.model.scaling_factor
+        return self.pos[1] / self.model.scaling_factor
+
+    @property
+    def x0(self):
+        return self.initial_pos[0] / self.model.scaling_factor
+
+    @property
+    def y0(self):
+        return self.initial_pos[1] / self.model.scaling_factor
 
     @property
     def dispersion_in_mm(self):
@@ -236,7 +264,7 @@ class Larva(LarvaworldAgent):
     @property
     def scaled_dispersion(self):
         return euclidean(tuple(self.pos),
-                         tuple(self.initial_pos)) / self.get_sim_length()
+                         tuple(self.initial_pos)) / self.sim_length
 
     @property
     def cum_dst_in_mm(self):
@@ -244,7 +272,7 @@ class Larva(LarvaworldAgent):
 
     @property
     def cum_scaled_dst(self):
-        return self.cum_dst / self.get_sim_length()
+        return self.cum_dst / self.sim_length
 
     @property
     def dst_to_center_in_mm(self):
@@ -252,7 +280,7 @@ class Larva(LarvaworldAgent):
 
     @property
     def scaled_dst_to_center(self):
-        return np.sqrt(np.sum(np.array(self.pos)**2)) / self.get_sim_length()
+        return np.sqrt(np.sum(np.array(self.pos)**2)) / self.sim_length
 
     @property
     def dst_to_chemotax_odor_in_mm(self):
@@ -262,7 +290,7 @@ class Larva(LarvaworldAgent):
     @property
     def scaled_dst_to_chemotax_odor(self):
         return euclidean(tuple(self.pos),
-                         (0.8, 0.0)) / self.get_sim_length()
+                         (0.8, 0.0)) / self.sim_length
 
     @property
     def max_dst_to_center_in_mm(self):
@@ -270,7 +298,7 @@ class Larva(LarvaworldAgent):
 
     @property
     def max_scaled_dst_to_center(self):
-        d = np.nanmax(np.sqrt(np.sum(np.array(self.trajectory)**2, axis=1)))/ self.get_sim_length()
+        d = np.nanmax(np.sqrt(np.sum(np.array(self.trajectory)**2, axis=1)))/ self.sim_length
         return d
 
     @property
@@ -279,7 +307,7 @@ class Larva(LarvaworldAgent):
 
     @property
     def mean_scaled_dst_to_center(self):
-        d = np.nanmean(np.sqrt(np.sum(np.array(self.trajectory)**2, axis=1)))/ self.get_sim_length()
+        d = np.nanmean(np.sqrt(np.sum(np.array(self.trajectory)**2, axis=1)))/ self.sim_length
         return d
 
     @property
@@ -292,7 +320,7 @@ class Larva(LarvaworldAgent):
     def scaled_dispersion_max(self):
         return np.max([euclidean(tuple(self.trajectory[i]),
                                  tuple(self.initial_pos)) for i in
-                       range(len(self.trajectory))]) / self.get_sim_length()
+                       range(len(self.trajectory))]) / self.sim_length
 
     @property
     def stride_dst_mean_in_mm(self):
@@ -300,7 +328,7 @@ class Larva(LarvaworldAgent):
 
     @property
     def stride_scaled_dst_mean(self):
-        return (self.cum_dst / self.get_sim_length()) / self.brain.crawler.iteration_counter
+        return (self.cum_dst / self.sim_length) / self.brain.crawler.iteration_counter
 
     @property
     def crawler_freq(self):

@@ -3,6 +3,8 @@ from typing import List, Tuple, Union
 import numpy as np
 from siunits import BaseUnit, Composite, DerivedUnit
 
+# from lib.conf.par import runtime_pars
+
 vis_render_dtypes = {
     'mode': [None, 'video', 'image'],
     'image_mode': [None, 'final', 'snapshots', 'overlap'],
@@ -441,14 +443,20 @@ all_null_dicts = {
         'o': None,
         'lim': None,
         'd': None,
+        'l': None,
         'exists': True,
         'func': None,
         'const': None,
-        'diff': False,
-        'cum': False,
+        'operator': None,
+        # 'diff': False,
+        # 'cum': False,
         'k0' : None,
             'k_num' : None,
             'k_den' : None,
+            'dst2source' : None,
+            'or2source' : None,
+            'dispersion' : False,
+'wrap_mode' : None
     }
 }
 
@@ -520,7 +528,7 @@ def get_dict_dtypes(name, **kwargs):
             'draw_Nsegs': int,
         },
         'optimization': {
-            'fit_par': par_conf.get_runtime_pars(),
+            'fit_par': str,
             'operations': {
                 'mean': bool,
                 'std': bool,
@@ -640,14 +648,20 @@ def get_dict_dtypes(name, **kwargs):
             'o': type,
             'lim': Tuple[float, float],
             'd': str,
+            'l': str,
             'exists': bool,
             'func': any,
             'const': any,
-            'diff': bool,
-            'cum': bool,
+            'operator' : [None, 'diff', 'cum', 'max', 'min', 'mean', 'std'],
+            # 'diff': bool,
+            # 'cum': bool,
             'k0' : str,
             'k_num' : str,
             'k_den' : str,
+            'dst2source': Tuple[float, float],
+            'or2source': Tuple[float, float],
+            'dispersion': bool,
+        'wrap_mode' : [None, 'zero', 'positive']
         }
 
     }
