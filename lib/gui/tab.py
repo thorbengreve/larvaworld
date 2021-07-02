@@ -3,8 +3,9 @@ import webbrowser
 
 import PySimpleGUI as sg
 import numpy as np
-from lib.conf.conf import loadConfDict, saveConf, deleteConf, loadConf
-from lib.gui.gui_lib import ClickableImage, window_size, t10_kws, graphic_button, t24_kws, named_list_layout, t8_kws
+from lib.conf.conf import loadConfDict, saveConf, deleteConf, loadConf, expandConf
+from lib.gui.gui_lib import ClickableImage, window_size, t10_kws, graphic_button, t24_kws, named_list_layout, t8_kws, \
+    save_conf_window
 import lib.stor.paths as paths
 
 class ProgressBarLayout :
@@ -30,7 +31,9 @@ class ProgressBarLayout :
 
 
 class SelectionList:
-    def __init__(self, tab, conftype, disp=None, actions=[], sublists={},idx=None, progress=False, **kwargs):
+    def __init__(self, tab, conftype, disp=None, actions=[], sublists={},idx=None, progress=False,
+                 width=24, **kwargs):
+        self.width = width
         self.tab = tab
         self.conftype = conftype
         self.actions = actions
@@ -105,7 +108,7 @@ class SelectionList:
             [sg.Text(n.capitalize(), **t10_kws), *bs],
             [sg.Combo(self.confs, key=self.k, enable_events=True,
                       tooltip=f'The currently loaded {n}.', readonly=True,
-                      size=(24, self.Nconfs)
+                      size=(self.width, self.Nconfs)
                       )]
         ]
         if self.progressbar is not None :
@@ -141,28 +144,26 @@ class SelectionList:
             for kk, vv in self.sublists.items():
                 conf[kk] = v[vv.k]
             id = self.save(conf)
-            self.update(w, id)
+            if id is not None :
+                self.update(w, id)
         elif e == f'DELETE_{n}' and id != '':
             deleteConf(id, k0)
             self.update(w)
         elif e == f'RUN_{n}' and id != '':
-            # print([v[l.k] for l in self.tab.selectionlists])
             conf = self.tab.get(w, v, c, as_entry=False)
             for kk, vv in self.sublists.items():
-                # print(self.k, kk, vv.k, vv.conftype)
-                conf[kk] = loadConf(id=v[vv.k], conf_type=vv.conftype)
-            d,g=self.tab.run(v,w,c,d,g, conf,id)
+                conf[kk] = expandConf(id=v[vv.k], conf_type=vv.conftype)
+            d,g=self.tab.run(v,w,c,d,g, conf, id)
             self.set_d(d)
             self.set_g(g)
         elif e == f'EDIT_{n}':
             conf = self.tab.get(w, v, c, as_entry=False)
             new_conf = self.tab.edit(conf)
             self.tab.update(w, c, new_conf, id=None)
-            # self.update(new_env, w, c)
 
     def update(self, w, id='', all=False):
         # w=self.w()
-        w.Element(self.k).Update(values=self.confs, value=id)
+        w.Element(self.k).Update(values=self.confs, value=id, size=(self.width, self.Nconfs))
         # w[self.k].update(values=list(loadConfDict(self.conftype).keys()), value=id)
         if all:
             for i in range(5):
@@ -171,16 +172,7 @@ class SelectionList:
                     w[k].update(values=self.confs, value=id)
 
     def save(self, conf):
-        n = self.disp
-        l = [
-            named_list_layout(f'Store new {n}', f'{n}_ID', list(loadConfDict(self.conftype).keys()),
-                              readonly=False, enable_events=False),
-            [sg.Ok(), sg.Cancel()]]
-        e, v = sg.Window(f'{n} configuration', l).read(close=True)
-        if e == 'Ok':
-            id = v[f'{n}_ID']
-            saveConf(conf, self.conftype, id)
-        return id
+        return save_conf_window(conf, self.conftype, disp=self.disp)
 
         # for i in range(3):
         #     k = f'{self.conf_k}{i}'
@@ -224,7 +216,7 @@ class GuiTab:
         d = self.gui.dicts
         self.eval(e, v, w, c, d, g)
 
-    def run(self, v, w, d, g, conf):
+    def run(self, v, w,c, d, g, conf, id):
         pass
         # return d, g
 

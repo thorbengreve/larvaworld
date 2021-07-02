@@ -3,7 +3,7 @@ import numpy as np
 from lib.anal.plotting import plot_endpoint_scatter, plot_turn_Dbearing, plot_turn_amp, plot_turns, plot_timeplot, \
     plot_navigation_index, plot_debs, plot_food_amount, plot_gut, plot_pathlength, plot_endpoint_params, barplot, \
     comparative_analysis, plot_marked_turns, plot_chunk_Dorient2source, plot_marked_strides, targeted_analysis, \
-    plot_stridesNpauses, plot_ang_pars
+    plot_stridesNpauses, plot_ang_pars, plot_interference
 from lib.aux import functions as fun
 from lib.conf import dtype_dicts as dtypes
 from lib.model.DEB.deb import deb_default
@@ -12,7 +12,7 @@ from lib.stor.larva_dataset import LarvaDataset
 
 
 def sim_analysis(d: LarvaDataset, exp_type, show_output=False):
-    ccc={'show' : True}
+    ccc={'show' : False}
     if d is None:
         return
     fig_dict = {}
@@ -27,12 +27,12 @@ def sim_analysis(d: LarvaDataset, exp_type, show_output=False):
         # cum_sd, f_success=e['cum_scaled_dst'].values, e['feed_success_rate'].values
         # print(cum_sd, f_success)
 
-        fig_dict['angular'] = plot_ang_pars(datasets=[d], **ccc)
-        fig_dict['bouts'] = plot_stridesNpauses(datasets=[d], plot_fits=None, only_fit_one=False, test_detection=True,
-                                                **ccc)
+        # fig_dict['angular'] = plot_ang_pars(datasets=[d], **ccc)
+        # fig_dict['bouts'] = plot_stridesNpauses(datasets=[d], plot_fits=None, only_fit_one=False, test_detection=True,
+        #                                         **ccc)
 
-        fig_dict['scatter_x4'] = plot_endpoint_scatter(datasets=[d], keys=['scum_d', 'f_am', 'str_tr', 'pau_tr'], **ccc)
-        fig_dict['scatter_x2'] = plot_endpoint_scatter(datasets=[d], keys=['scum_d', 'f_am'], **ccc)
+        fig_dict['scatter_x4'] = plot_endpoint_scatter(datasets=[d], keys=['cum_sd', 'f_am', 'str_tr', 'pau_tr'], **ccc)
+        fig_dict['scatter_x2'] = plot_endpoint_scatter(datasets=[d], keys=['cum_sd', 'f_am'], **ccc)
 
     elif exp_type in ['food_at_bottom']:
         ds = d.split_dataset(is_last=False, show_output=show_output)
@@ -108,7 +108,6 @@ def sim_analysis(d: LarvaDataset, exp_type, show_output=False):
         target_dataset = load_reference_dataset(dataset_id=d.config['sample_dataset'])
         ds = [d, target_dataset]
         labels = ['simulated', 'empirical']
-
         # targeted_analysis(ds)
         dic0 = comparative_analysis(datasets=ds, labels=labels, simVSexp=True, save_to=None, **ccc)
         fig_dict.update(dic0)

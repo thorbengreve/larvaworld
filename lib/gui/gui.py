@@ -4,11 +4,13 @@ import matplotlib
 from lib.gui.analysis_tab import AnalysisTab
 from lib.gui.batch_tab import BatchTab
 from lib.gui.env_tab import EnvTab
+from lib.gui.life_tab import LifeTab
 from lib.gui.sim_tab import SimTab
 from lib.gui.tab import IntroTab, VideoTab, TutorialTab
 from lib.gui.model_tab import ModelTab
 from lib.gui.settings_tab import SettingsTab
 import lib.gui.gui_lib as gui
+import lib.aux.functions as fun
 
 matplotlib.use('TkAgg')
 
@@ -21,6 +23,7 @@ class LarvaworldGui:
             'tutorials': (TutorialTab,None),
                          'larva-model': (ModelTab,'Model'),
                          'environment': (EnvTab,'Env'),
+                         'life-history': (LifeTab,'Life'),
                          'simulation': (SimTab,'Exp'),
                          'batch-run': (BatchTab,'Batch'),
                          'analysis': (AnalysisTab,None),
@@ -39,14 +42,18 @@ class LarvaworldGui:
 
 
     def run(self):
+
         while True:
+
             e, v = self.window.read()
             if e in (None, 'Exit'):
+                self.window.close()
                 break
-            gui.default_run_window(self.window, e, v, self.collapsibles, self.graph_lists)
+            else :
+                gui.default_run_window(self.window, e, v, self.collapsibles, self.graph_lists)
 
-            n = v['ACTIVE_TAB'].split()[0]
-            self.tabs[n].eval0(e=e, v=v)
+                n = v['ACTIVE_TAB'].split()[0]
+                self.tabs[n].eval0(e=e, v=v)
             # self.dicts, self.graph_lists = self.tabs[n].eval0(e=e, v=v)
 
 
@@ -64,7 +71,7 @@ class LarvaworldGui:
             #     # thread, message, progress, timeout = None, '', 0, None  # reset variables for next run
             #     graph_lists['BATCH'].update(W, dicts['batch_results']['fig_dict'])
             # print(v)
-        self.window.close()
+        # self.window.close()
 
     def build(self, tabs):
         ls, cs, ds, gs, ts = [], {}, {}, {},{}

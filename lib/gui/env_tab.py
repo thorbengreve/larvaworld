@@ -1,5 +1,4 @@
 import copy
-import threading
 import PySimpleGUI as sg
 import lib.conf.dtype_dicts as dtypes
 
@@ -47,14 +46,14 @@ class EnvTab(GuiTab):
         c = {}
         for s in [s1, s2, s3, s4]:
             c.update(**s.get_subdicts())
-        c1 = [CollapsibleDict(n, False, dict=dtypes.get_dict(n), type_dict=dtypes.get_dict_dtypes(n), **kw)
+        c1 = [CollapsibleDict(n, False, default=True, **kw)
               for n, kw in zip(['arena', 'food_grid', 'odorscape'], [{}, {'toggle': True}, {}])]
         for s in c1:
             c.update(s.get_subdicts())
-        l1 = [c[n].get_section() for n in ['source_groups', 'source_units', 'food_grid']]
+        l1 = [c[n].get_layout() for n in ['source_groups', 'source_units', 'food_grid']]
         c2 = Collapsible('Sources', True, l1)
         c.update(c2.get_subdicts())
-        l2 = [c[n].get_section() for n in ['arena', 'larva_groups', 'Sources', 'border_list', 'odorscape']]
+        l2 = [c[n].get_layout() for n in ['arena', 'larva_groups', 'Sources', 'border_list', 'odorscape']]
         l1 = SelectionList(tab=self,conftype='Env',actions=['load', 'edit', 'save', 'delete'])
         self.selectionlists=[l1]
         l = [[sg.Col([l1.l, *l2], **col_kws, size=col_size(0.5))]]

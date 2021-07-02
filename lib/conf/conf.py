@@ -251,11 +251,26 @@ def loadConf(id, conf_type):
     except:
         raise ValueError(f'{conf_type} Configuration {id} does not exist')
 
+def expandConf(id, conf_type):
+    conf = loadConf(id, conf_type)
+    if conf_type=='Batch' :
+        conf['exp'] = expandConf(conf['exp'], 'Exp')
+    elif conf_type=='Exp' :
+        conf['env_params']=expandConf(conf['env_params'], 'Env')
+    elif conf_type=='Env' :
+        for k, v in conf['larva_groups'].items():
+            if type(v['model']) == str:
+                v['model'] = loadConf(v['model'], 'Model')
+    return conf
+
 
 def loadConfDict(conf_type):
-    with open(paths.conf_paths[conf_type]) as tfp:
-        Conf_dict = json.load(tfp)
-    return Conf_dict
+    try :
+        with open(paths.conf_paths[conf_type]) as tfp:
+            Conf_dict = json.load(tfp)
+        return Conf_dict
+    except :
+        return {}
 
 
 def saveConf(conf, conf_type, id=None, mode='overwrite'):
@@ -399,56 +414,56 @@ if __name__ == '__main__':
     for k, v in mod_dict.items():
         saveConf(v, 'Model', k)
 
-    batch_dict = {
-        # 'focused view': env.focus_env,
-        # 'dish': env.dish_env,
-        # 'dispersion': env.dispersion_env,
-        'chemotaxis_approach': bat.chemotax_batch,
-        'chemotaxis_local': bat.chemorbit_batch,
-        # 'chemotaxis local diffusion': env.chemorbit_diffusion_env,
-        'odor_preference': bat.odor_pref_batch,
-        'patchy_food': bat.uniform_food_batch,
-        # 'uniform food': env.uniform_food_env,
-        'food_grid': bat.food_grid_batch,
-        'growth': bat.growth_batch,
-        'rovers_sitters': bat.rovers_sitters_batch,
-        # 'reorientation': env.reorientation_env,
-        # 'realistic imitation': env.imitation_env_p,
-        # 'maze': env.maze_env,
-        # 'keep the flag': env.king_env,
-        # 'flag to base': env.flag_env,
-        # 'RL chemotaxis local': env.RL_chemorbit_env,
-    }
-    for k, v in batch_dict.items():
+    # batch_dict = {
+    #     # 'focused view': env.focus_env,
+    #     # 'dish': env.dish_env,
+    #     # 'dispersion': env.dispersion_env,
+    #     'chemotaxis_approach': bat.chemotax_batch,
+    #     'chemotaxis_local': bat.chemorbit_batch,
+    #     # 'chemotaxis local diffusion': env.chemorbit_diffusion_env,
+    #     'odor_preference': bat.odor_pref_batch,
+    #     'patchy_food': bat.patchy_food_batch,
+    #     # 'uniform food': env.uniform_food_env,
+    #     'food_grid': bat.food_grid_batch,
+    #     'growth': bat.growth_batch,
+    #     'rovers_sitters': bat.rovers_sitters_batch,
+    #     # 'reorientation': env.reorientation_env,
+    #     # 'realistic imitation': env.imitation_env_p,
+    #     # 'maze': env.maze_env,
+    #     # 'keep the flag': env.king_env,
+    #     # 'flag to base': env.flag_env,
+    #     # 'RL chemotaxis local': env.RL_chemorbit_env,
+    # }
+    for k, v in bat.batch_dict.items():
         saveConf(v, 'Batch', k)
-
-    exp_dict = {
-        'focus': exp.focus,
-        'dish': exp.dish,
-        'dispersion': exp.dispersion,
-        'chemotaxis_approach': exp.chemotax,
-        'chemotaxis_local': exp.chemorbit,
-        'chemotaxis_diffusion': exp.chemorbit_diffusion,
-        'odor_pref_test': exp.odor_pref_test,
-        'odor_pref_test_on_food': exp.odor_pref_test_on_food,
-        'odor_pref_train': exp.odor_pref_train,
-        'odor_pref_RL': exp.odor_pref_RL,
-        'patchy_food': exp.patchy_food,
-        'uniform_food': exp.uniform_food,
-        'food_grid': exp.food_grid,
-        'growth': exp.growth,
-        'rovers_sitters': exp.rovers_sitters,
-        'reorientation': exp.reorientation,
-        'realistic_imitation': exp.imitation,
-        'maze': exp.maze,
-        'keep_the_flag': exp.keep_the_flag,
-        'capture_the_flag': exp.capture_the_flag,
-        'catch_me': exp.catch_me,
-        'chemotaxis_RL': exp.chemotaxis_RL,
-        'food_at_bottom': exp.food_at_bottom,
-        '4corners': exp.RL_4corners,
-    }
-    for k, v in exp_dict.items():
+    #
+    # exp_dict = {
+    #     'focus': exp.focus,
+    #     'dish': exp.dish,
+    #     'dispersion': exp.dispersion,
+    #     'chemotaxis_approach': exp.chemotax,
+    #     'chemotaxis_local': exp.chemorbit,
+    #     'chemotaxis_diffusion': exp.chemorbit_diffusion,
+    #     'odor_pref_test': exp.odor_pref_test,
+    #     'odor_pref_test_on_food': exp.odor_pref_test_on_food,
+    #     'odor_pref_train': exp.odor_pref_train,
+    #     'odor_pref_RL': exp.odor_pref_RL,
+    #     'patchy_food': exp.patchy_food,
+    #     'uniform_food': exp.uniform_food,
+    #     'food_grid': exp.food_grid,
+    #     'growth': exp.growth,
+    #     'rovers_sitters': exp.rovers_sitters,
+    #     'reorientation': exp.reorientation,
+    #     'realistic_imitation': exp.imitation,
+    #     'maze': exp.maze,
+    #     'keep_the_flag': exp.keep_the_flag,
+    #     'capture_the_flag': exp.capture_the_flag,
+    #     'catch_me': exp.catch_me,
+    #     'chemotaxis_RL': exp.chemotaxis_RL,
+    #     'food_at_bottom': exp.food_at_bottom,
+    #     '4corners': exp.RL_4corners,
+    # }
+    for k, v in exp.exp_dict.items():
         saveConf(v, 'Exp', k)
 
 
@@ -470,5 +485,7 @@ def next_idx(exp, type='single'):
     with open(paths.SimIdx_path, "w") as fp:
         json.dump(idx_dict, fp)
     return idx_dict[type][exp]
+
+# print(env_dict['odor_pref_test']['food_params']['source_units'])
 
 

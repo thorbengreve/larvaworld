@@ -16,10 +16,10 @@ from lib.conf.par import load_ParDict
 from lib.stor import paths
 
 
-def detect_bouts(s,e,dt,Npoints,point, config=None, bouts=['stride', 'pause', 'turn'],
-                 recompute=False, track_point=None, track_pars=None,chunk_pars=None,
-                 vel_par=None, ang_vel_par=None, bend_vel_par=None,min_ang=5.0,
-                 non_chunks=False,distro_dir=None,stride_p_dir=None,source=None, show_output=True, **kwargs):
+def annotate(s, e, dt, Npoints, point, config=None, bouts=['stride', 'pause', 'turn'],
+             recompute=False, track_point=None, track_pars=None, chunk_pars=None,
+             vel_par=None, ang_vel_par=None, bend_vel_par=None, min_ang=5.0,
+             non_chunks=False, distro_dir=None, stride_p_dir=None, source=None, show_output=True, **kwargs):
 
     # if paths.new_format :
     #     dic = load_ParDict()
@@ -70,15 +70,16 @@ def detect_bouts(s,e,dt,Npoints,point, config=None, bouts=['stride', 'pause', 't
         'stride_p_dir': stride_p_dir,
     }
     with fun.suppress_stdout(show_output):
-        if 'stride' in bouts:
-            detect_strides(**c, non_chunks=non_chunks,vel_par=vel_par,chunk_pars=chunk_pars, **kwargs)
-        if 'pause' in bouts:
-            detect_pauses(**c,vel_par=vel_par, **kwargs)
-        if 'turn' in bouts:
-            detect_turns(**c,ang_vel_par=ang_vel_par, bend_vel_par=bend_vel_par,min_ang=min_ang, **kwargs)
-        if source is not None :
-            for b in bouts :
-                compute_chunk_bearing2source(s, b, source=source, distro_dir=distro_dir)
+        if type(bouts) == list:
+            if 'stride' in bouts:
+                detect_strides(**c, non_chunks=non_chunks,vel_par=vel_par,chunk_pars=chunk_pars, **kwargs)
+            if 'pause' in bouts:
+                detect_pauses(**c,vel_par=vel_par, **kwargs)
+            if 'turn' in bouts:
+                detect_turns(**c,ang_vel_par=ang_vel_par, bend_vel_par=bend_vel_par,min_ang=min_ang, **kwargs)
+            if source is not None :
+                for b in bouts :
+                    compute_chunk_bearing2source(s, b, source=source, distro_dir=distro_dir)
     return s,e
 
 
@@ -580,4 +581,4 @@ if __name__ == '__main__':
     from lib.stor.managing import get_datasets
     d = get_datasets(datagroup_id='SimGroup', last_common='single_runs', names=['dish/wwr'], mode='load')[0]
     s = d.step_data
-    d.detect_bouts(show_output=True)
+    d.annotate(show_output=True)

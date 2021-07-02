@@ -18,7 +18,7 @@ from lib.anal.combining import combine_images, combine_pdfs
 from lib.conf import conf
 from lib.aux import functions as fun
 from lib.conf.par import getPar, chunk_dict
-from lib.model import DEB
+from lib.model.DEB.deb import DEB
 from lib.model.modules.intermitter import get_EEB_poly1d
 from lib.stor import paths
 
@@ -337,14 +337,14 @@ def plot_sample_tracks(datasets, labels=None, mode='strides', agent_idx=0, agent
 
 def plot_marked_turns(dataset, agent_ids=None, turn_epochs=['Rturn', 'Lturn'],
                       vertical_boundaries=False, min_turn_angle=0, slices=[], subfolder='individuals',
-                      return_fig=False, show=False):
+                      save_to=None,return_fig=False, show=False):
+    Ndatasets, colors, save_to, labels = plot_config(datasets=[dataset], labels=[dataset.id], save_to=save_to, subfolder=subfolder)
     # We plot the complete or a slice of the timeseries of scal centroid velocity. The grey areas are stridechains
     d = dataset
 
     if agent_ids is None:
         agent_ids = d.agent_ids
 
-    save_to = os.path.join(d.plot_dir, subfolder)
 
     xx = f'marked_turns_min_angle_{min_turn_angle}'
     filepath_full = f'{xx}_full.{suf}'
@@ -520,7 +520,7 @@ def plot_pauses(dataset, Npauses=10, save_to=None, plot_simulated=False, return_
 
 
 def plot_debs(deb_dicts=None, save_to=None, save_as=None, mode='full', roversVSsitters=False,
-              time_unit='hours', return_fig=False, sim_only=False,
+              time_unit='hours', return_fig=False, sim_only=False, force_ymin=None,color_epoch_quality=True,
               datasets=None, labels=None, show=False):
     warnings.filterwarnings('ignore')
     if save_to is None:
@@ -623,15 +623,23 @@ def plot_debs(deb_dicts=None, save_to=None, save_as=None, mode='full', roversVSs
 
     labels = [labels0[i] for i in idx]
     ylabels = [ylabels0[i] for i in idx]
+    Npars=len(labels)
+    figsize = (13, 4 * Npars)
+    fig, axs = plt.subplots(Npars, figsize=figsize, sharex=True, sharey=sharey)
+    axs = axs.ravel() if Npars > 1 else [axs]
 
-    figsize = (15, 3 * len(labels))
-    fig, axs = plt.subplots(len(labels), figsize=figsize, sharex=True, sharey=sharey)
-    axs = axs.ravel() if len(labels) > 1 else [axs]
+    rr0,gg0,bb0=q_col1=np.array([255, 0, 0])/255
+    rr1,gg1,bb1=q_col2=np.array([0, 255, 0])/255
+    quality_col_range=np.array([rr1-rr0,gg1-gg0,bb1-bb0])
 
     t0s, t1s, t2s, t3s, max_ages = [], [], [], [], []
     for d, id, c in zip(deb_dicts, ids, cols):
         t0, t1, t2, t3, age = d['birth'], d['pupation'], d['death'], d['sim_start'] + d['birth'], np.array(d['age'])
         epochs = np.array(d['epochs'])
+        if 'epoch_qs' in d.keys() :
+            epoch_qs=np.array(d['epoch_qs'])
+        else :
+            epoch_qs=np.zeros(len(epochs))
         if sim_only:
             t0 -= t3
             t1 -= t3
@@ -669,10 +677,11 @@ def plot_debs(deb_dicts=None, save_to=None, save_as=None, mode='full', roversVSs
             ax.axvline(t1, color=c, alpha=0.6, linestyle='dashdot', linewidth=3)
             ax.axvline(t2, color=c, alpha=0.6, linestyle='dashdot', linewidth=3)
             if d['simulation']:
-                # ax.axvline(t3, color='grey', alpha=0.3, linestyle='dashed', linewidth=3)
                 ax.axvspan(0, t3, color='grey', alpha=0.05)
-            for st0, st1 in epochs:
-                ax.axvspan(st0, st1, color=c, alpha=0.2)
+            for (st0, st1),qq in zip(epochs,epoch_qs):
+                q_col = q_col1 + qq * quality_col_range if color_epoch_quality else c
+                ax.axvspan(st0, st1, color=q_col, alpha=0.2)
+
             ax.set_ylabel(yl, labelpad=15, fontsize=15)
             ax.yaxis.set_major_locator(ticker.MaxNLocator(3))
             ax.tick_params(axis='y', labelsize=15)
@@ -681,6 +690,10 @@ def plot_debs(deb_dicts=None, save_to=None, save_as=None, mode='full', roversVSs
             if l in ['pupation_buffer', 'explore2exploit_balance', 'R_faeces', 'R_absorbed', 'R_not_digested',
                      'gut_occupancy']:
                 ax.set_ylim([0, 1])
+            if force_ymin is not None :
+                ax.set_ylim(ymin=force_ymin)
+            if not sim_only :
+                ax.set_xlim(xmin=0)
             if l == 'f' or mode == 'fs':
                 ax.axhline(np.nanmean(P), color=c, alpha=0.6, linestyle='dashed', linewidth=2)
                 # ax.set_ylim(ymin=0)
@@ -690,8 +703,10 @@ def plot_debs(deb_dicts=None, save_to=None, save_as=None, mode='full', roversVSs
         for t in [0, t0, t1, t2]:
             if not np.isnan(t):
                 try:
-                    ax.annotate('', xy=(t, 0), xycoords='data',
-                                xytext=(t, -0.2), textcoords='data',
+                    y0,y1=ax.get_ylim()
+                    ytext=y0-0.2*(y1-y0)
+                    ax.annotate('', xy=(t, y0), xycoords='data',
+                                xytext=(t, ytext), textcoords='data',
                                 arrowprops=dict(color='black', shrink=0.08, alpha=0.6)
                                 )
                 except:
@@ -710,8 +725,10 @@ def plot_debs(deb_dicts=None, save_to=None, save_as=None, mode='full', roversVSs
     text_xs = [0, T0, T1, T2]
     for text, x in zip(texts, text_xs):
         try:
-            ax.annotate(text, xy=(x, 0), xycoords='data', fontsize=fontsize,
-                        xytext=(x, y), textcoords='data',
+            y0, y1 = ax.get_ylim()
+            ytext = y0 - 0.2 * (y1 - y0)
+            ax.annotate(text, xy=(x, y0), xycoords='data', fontsize=fontsize,
+                        xytext=(x, ytext), textcoords='data',
                         horizontalalignment='center', verticalalignment='top')
         except:
             pass
@@ -724,7 +741,7 @@ def plot_debs(deb_dicts=None, save_to=None, save_as=None, mode='full', roversVSs
             ax.set_xticks(ticks=np.arange(0, np.max(max_ages), tickstep))
 
     dataset_legend(leg_ids, leg_cols, ax=axs[0], loc='upper left', fontsize=20, prop={'size': 15})
-    fig.subplots_adjust(top=0.95, bottom=0.2, left=0.15, right=0.93, hspace=0.02)
+    fig.subplots_adjust(top=0.95, bottom=0.25, left=0.15, right=0.93, hspace=0.02)
     return process_plot(fig, save_to, save_as, return_fig, show)
 
 
@@ -938,10 +955,6 @@ def plot_bend2orientation_analysis(dataset, save_to=None, save_as=f'bend2orienta
     fig = plt.figure(figsize=figsize)
     fig, axs = plt.subplots(1, 2, figsize=figsize)
     axs = axs.ravel()
-    # set up subplot grid
-    # gridspec.GridSpec(2, 2)
-
-    # plt.subplot2grid((2, 2), (0, 0), colspan=1, rowspan=1)
 
     scores1 = []
     coefs1 = []
@@ -1221,7 +1234,9 @@ def plot_stride_Dbend(datasets, labels=None, show_text=False, subfolder='stride'
 
 
 def plot_EEB_vs_food_quality(samples=['Fed', 'Deprived', 'Starved'], dt=None,
-                             species_list=['rover', 'sitter', 'default'], **kwargs):
+                             species_list=['rover', 'sitter', 'default'], save_to=None, return_fig=False,
+                      show=False, **kwargs):
+    filename = f'EEB_vs_food_quality.{suf}'
     qs = np.arange(0.01, 1, 0.01)
     # qs=[1.0,0.75,0.5,0.25,0.15]
 
@@ -1239,7 +1254,7 @@ def plot_EEB_vs_food_quality(samples=['Fed', 'Deprived', 'Starved'], dt=None,
                   'marker': '.'}
             for q in qs:
                 deb = DEB(substrate_quality=q, species=species, **kwargs)
-                s = np.round(deb.feed_freq_estimate, 2)
+                s = np.round(deb.fr_feed, 2)
                 ss.append(s)
                 EEBs.append(z(s))
 
@@ -1257,9 +1272,7 @@ def plot_EEB_vs_food_quality(samples=['Fed', 'Deprived', 'Starved'], dt=None,
         axs[3 * i + 2].set_ylim([0, 1])
     for ax in axs:
         ax.legend()
-    # axs[2].set_xlim(r'estimated feed freq $Hz$')
-    # axs[0].set_ylim(r'estimated feed freq $Hz$')
-    plt.show()
+    return process_plot(fig, save_to, filename, return_fig, show)
 
 
 def plot_stride_Dorient(datasets, labels=None, simVSexp=False, absolute=True, subfolder='stride',
@@ -1363,10 +1376,6 @@ def plot_dispersion(datasets, labels=None, ranges=None, scaled=False, subfolder=
             par = f'dispersion'
         else:
             par = f'dispersion_{r0}_{r1}'
-        # try :
-
-        # except :
-        #     dsp_dfs = [d.endpoint_data[par if not scaled else nam.scal(par)] for d in datasets]
 
         if scaled:
             filename = f'scaled_dispersion_{r0}-{r1}_{fig_cols}.{suf}'
@@ -1382,16 +1391,12 @@ def plot_dispersion(datasets, labels=None, ranges=None, scaled=False, subfolder=
         fig, axs = plt.subplots(1, 1, figsize=(5 * fig_cols, 5))
 
         for d, lab, c in zip(datasets, labels, colors):
-            dsp_df = d.load_aux(type='dispersion', name=par if not scaled else nam.scal(par))
-            dsp_m = dsp_df['median'].values
-            dsp_u = dsp_df['upper'].values
-            dsp_b = dsp_df['lower'].values
-
-            dsp_m = dsp_m[t0:t1]
-            dsp_u = dsp_u[t0:t1]
-            dsp_b = dsp_b[t0:t1]
-            plot_mean_and_range(x=trange, mean=dsp_m, lb=dsp_b, ub=dsp_u, axis=axs, color_mean=c,
-                                color_shading=c, label=lab)
+            dsp = d.load_aux(type='dispersion', name=par if not scaled else nam.scal(par))
+            plot_mean_and_range(x=trange,
+                                mean=dsp['median'].values[t0:t1],
+                                lb=dsp['upper'].values[t0:t1],
+                                ub=dsp['lower'].values[t0:t1],
+                                axis=axs, color_mean=c, color_shading=c, label=lab)
         if ymax is not None:
             axs.set_ylim(ymax=ymax)
         axs.set_ylabel(ylab)
@@ -2384,7 +2389,7 @@ def plot_endpoint_params(datasets, labels=None, mode='basic', par_shorts=None, s
         elif mode == 'minimal':
             par_shorts = ['l_mu', 'fsv', 'sv_mu', 'str_sd_mu',
                           'cum_t', 'str_tr', 'pau_tr', 'tor',
-                          'tor5_mu', 'tor20_mu', 'disp_0_40_max', 'disp_0_40_fin',
+                          'tor5_mu', 'tor20_mu', 'dsp_0_40_max', 'dsp_0_40_fin',
                           'b_mu', 'bv_mu', 'Ltur_tr', 'Rtur_tr']
         elif mode == 'stride_def':
             par_shorts = ['l_mu', 'fsv', 'str_sd_mu', 'str_sd_std']
@@ -2399,24 +2404,24 @@ def plot_endpoint_params(datasets, labels=None, mode='basic', par_shorts=None, s
             par_shorts = ['l_mu', 'fsv', 'sv_mu', 'str_sd_mu',
                           'cum_t', 'str_tr', 'pau_tr', 'pau_t_mu',
                           'tor5_mu', 'tor5_std', 'tor20_mu', 'tor20_std',
-                          'tor', 'sdisp_mu', 'sdisp40_max', 'sdisp40_fin',
+                          'tor', 'sdsp_mu', 'sdsp_0_40_max', 'sdsp_0_40_fin',
                           'b_mu', 'b_std', 'bv_mu', 'bv_std',
                           'Ltur_tr', 'Rtur_tr', 'Ltur_fou_mu', 'Rtur_fou_mu']
 
         elif mode == 'full':
 
-            par_shorts = ['l_mu', 'str_N', 'str_rr', 'fsv',
+            par_shorts = ['l_mu', 'str_N', 'fsv',
                           'cum_d', 'cum_sd', 'v_mu', 'sv_mu',
                           'str_d_mu', 'str_d_std', 'str_sd_mu', 'str_sd_std',
                           'str_std_mu', 'str_std_std', 'str_sstd_mu', 'str_sstd_std',
                           'str_fo_mu', 'str_fo_std', 'str_ro_mu', 'str_ro_std',
                           'str_b_mu', 'str_b_std', 'str_t_mu', 'str_t_std',
-                          'cum_t', 'str_tr', 'pau_tr', 'non_str_tr',
+                          'cum_t', 'str_tr', 'pau_tr',
                           'pau_N', 'pau_t_mu', 'pau_t_std', 'tor',
                           'tor2_mu', 'tor5_mu', 'tor10_mu', 'tor20_mu',
                           'tor2_std', 'tor5_std', 'tor10_std', 'tor20_std',
-                          'disp_mu', 'disp_fin', 'disp40_fin', 'disp40_max',
-                          'sdisp_mu', 'sdisp_fin', 'sdisp40_fin', 'sdisp40_max',
+                          'dsp_mu', 'dsp_fin', 'dsp_0_40_fin', 'dsp_0_40_max',
+                          'sdsp_mu', 'sdsp_fin', 'sdsp_0_40_fin', 'sdsp_0_40_max',
                           'Ltur_t_mu', 'Ltur_t_std', 'cum_Ltur_t', 'Ltur_tr',
                           'Rtur_t_mu', 'Rtur_t_std', 'cum_Rtur_t', 'Rtur_tr',
                           'Ltur_fou_mu', 'Ltur_fou_std', 'Rtur_fou_mu', 'Rtur_fou_std',

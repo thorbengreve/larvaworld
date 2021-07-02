@@ -7,11 +7,10 @@ from operator import attrgetter
 import lib.conf.data_conf as dat
 from lib.anal.plotting import *
 
-from lib.aux.collecting import output, midline_xy_pars
-from lib.conf.par import build_par_dict, GroupCollector, collection_dict, combo_collection_dict
+from lib.aux.collecting import output_dict, midline_xy_pars
+from lib.conf.par import combo_collection_dict
 from lib.envs._larvaworld import LarvaWorldSim
 from lib.conf.conf import loadConf, next_idx
-from lib.sim.enrichment import sim_enrichment
 from lib.stor.larva_dataset import LarvaDataset
 import lib.conf.dtype_dicts as dtypes
 
@@ -24,10 +23,11 @@ def run_sim_basic(
         env_params,
         vis_kwargs=dtypes.get_dict('visualization'),
         life_params=dtypes.get_dict('life'),
+        enrichment=dtypes.get_dict('enrichment'),
         collections=None,
         save_to=None,
         save_data_flag=True,
-        enrich=False,
+        # enrich=False,
         experiment=None,
         par_config=dat.SimParConf,
         seed=1,
@@ -37,12 +37,12 @@ def run_sim_basic(
 
 
     np.random.seed(seed)
-    id = sim_params['sim_id']
-    dt = sim_params['dt']
-    Nsec = sim_params['sim_dur'] * 60
+    id = sim_params['sim_ID']
+    dt = sim_params['timestep']
+    Nsec = sim_params['duration'] * 60
     path = sim_params['path']
     Box2D = sim_params['Box2D']
-    sample_dataset = sim_params['sample_dataset']
+    sample = sim_params['sample']
 
     if save_to is None:
         save_to = paths.SimFolder
@@ -58,17 +58,16 @@ def run_sim_basic(
 
     # FIXME This only takes the first configuration into account
     Npoints = list(env_params['larva_groups'].values())[0]['model']['body']['Nsegs'] + 1
-
     d = LarvaDataset(dir=dir_path, id=id, fr=1 / dt,
-                     Npoints=Npoints, Ncontour=0, sample_dataset=sample_dataset,
+                     Npoints=Npoints, Ncontour=0, sample_dataset=sample,
                      arena_pars=env_params['arena'],
                      par_conf=par_config, save_data_flag=save_data_flag, load_data=False,
                      life_params=life_params
                      )
 
-    collected_pars = collection_conf(dataset=d, collections=collections)
-    env = LarvaWorldSim(id=id, dt=dt, Box2D=Box2D, sample_dataset=sample_dataset,
-                        env_params=env_params, collected_pars=collected_pars,
+    output = collection_conf(dataset=d, collections=collections)
+    env = LarvaWorldSim(id=id, dt=dt, Box2D=Box2D, sample_dataset=sample,
+                        env_params=env_params, output=output,
                         life_params=life_params, Nsteps=Nsteps,
                         save_to=d.vis_dir, experiment=experiment,
                         **kwargs, vis_kwargs=vis_kwargs)
@@ -86,7 +85,7 @@ def run_sim_basic(
         dur = end - start
         param_dict['duration'] = np.round(dur, 2)
         print(f'    Simulation completed in {np.round(dur).astype(int)} seconds!')
-        res=store_sim_data(env, d, save_data_flag, enrich, experiment, param_dict)
+        res=store_sim_data(env, d, save_data_flag, enrichment, param_dict)
     env.close()
     return res
 
@@ -94,7 +93,7 @@ def run_sim_basic(
 ser = pickle.dumps(run_sim_basic)
 run_sim = pickle.loads(ser)
 
-def store_sim_data(env, d, save_data_flag, enrich, experiment, param_dict):
+def store_sim_data(env, d, save_data_flag, enrichment, param_dict):
     # Read the data collected during the simulation
     if not paths.new_format :
         # old format
@@ -127,8 +126,9 @@ def store_sim_data(env, d, save_data_flag, enrich, experiment, param_dict):
         if df0 is not None :
             df0=df0.droplevel('Step')
         d.set_data(step=df, end=df0)
-    if enrich and experiment is not None:
-        d = sim_enrichment(d, experiment)
+    d.enrich(**enrichment)
+    # print(d.step_data['cum_scaled_dst'])
+    # d = sim_enrichment(d, experiment)
     # Save simulation data and parameters
     if save_data_flag:
         d.save()
@@ -149,7 +149,7 @@ def collection_conf(dataset, collections):
     if not paths.new_format :
         if collections is None:
             collections = ['pose']
-        cd=output
+        cd=output_dict
         d = dataset
         step_pars = []
         end_pars = []
@@ -171,8 +171,8 @@ def collection_conf(dataset, collections):
         step=fun.unique_list(step_pars)
         end=fun.unique_list(end_pars)
 
-        collected_pars = {'step': step,
-                          'endpoint': end,
+        output = {'step': step,
+                          'end': end,
                           'tables': tables,
                           'step_groups': [],
                           'end_groups': [],
@@ -181,12 +181,12 @@ def collection_conf(dataset, collections):
     else :
         cd = combo_collection_dict
         cs=[cd[c] for c in collections if c in cd.keys()]
-        collected_pars = {'step': [],
-                          'endpoint': [],
+        output = {'step': [],
+                          'end': [],
                           'tables': {},
                           'step_groups': fun.flatten_list([c['step'] for c in cs]),
                           'end_groups': fun.flatten_list([c['end'] for c in cs])}
-    return collected_pars
+    return output
 
 
 def load_reference_dataset(dataset_id='reference', load_data=False):
@@ -219,14 +219,14 @@ def get_exp_conf(exp_type, sim_params, life_params=None, enrich=True, N=None, la
             life_params = dtypes.get_dict('life')
         exp_conf['life_params'] = life_params
 
-    if sim_params['sim_id'] is None:
+    if sim_params['sim_ID'] is None:
         idx = next_idx(exp_type)
-        sim_params['sim_id'] = f'{exp_type}_{idx}'
+        sim_params['sim_ID'] = f'{exp_type}_{idx}'
     if sim_params['path'] is None:
         sim_params['path'] = f'single_runs/{exp_type}'
-    if sim_params['sim_dur'] is None:
-        sim_params['sim_dur'] = exp_conf['sim_params']['sim_dur']
+    if sim_params['duration'] is None:
+        sim_params['duration'] = exp_conf['sim_params']['duration']
     exp_conf['sim_params'] = sim_params
     exp_conf['experiment'] = exp_type
-    exp_conf['enrich'] = enrich
+    # exp_conf['enrichment'] = enrich
     return exp_conf

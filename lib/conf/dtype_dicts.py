@@ -204,6 +204,7 @@ def get_pygame_key(key):
 
 
 def get_dict(name, class_name=None, basic=True, as_entry=False, **kwargs):
+    # print(name)
     if name in list(all_null_dicts.keys()):
         d = all_null_dicts[name]
     elif name == 'distro':
@@ -211,7 +212,7 @@ def get_dict(name, class_name=None, basic=True, as_entry=False, **kwargs):
     elif name == 'agent':
         d = null_agent(class_name=class_name)
     dic = copy.deepcopy(d)
-    if name == 'visualization':
+    if name in ['visualization', 'enrichment']:
         for k, v in dic.items():
             if k in list(kwargs.keys()):
                 dic[k] = kwargs[k]
@@ -256,6 +257,33 @@ def null_distro(class_name, basic=True):
                 pass
     return distro
 
+# Compound densities (g/cm**3)
+substrate_dict = {
+    'standard': {
+        'glucose': 100 / 1000,
+        'dextrose': 0,
+        'saccharose': 0,
+        'yeast': 50 / 1000,
+        'agar': 16 / 1000,
+        'cornmeal': 0,
+    },
+    'cornmeal': {
+                'glucose':  517 / 17000,
+                'dextrose': 1033 / 17000,
+                'saccharose': 0,
+                'yeast': 0,
+                'agar': 93 / 17000,
+                'cornmeal': 1716 / 17000,
+            },
+    'PED_tracker': {
+        'glucose': 0,
+        'dextrose': 0,
+        'saccharose': 2 / 200,
+        'yeast': 3 * 0.05 * 0.125 / 0.1,
+        'agar': 500 * 2 / 200,
+        'cornmeal': 0,
+    }
+}
 
 all_null_dicts = {
     'odor':
@@ -289,8 +317,10 @@ all_null_dicts = {
     'life':
         {
             'epochs': None,
+            'epoch_qs': None,
             'hours_as_larva': 0.0,
-            'substrate_quality': 1.0
+            'substrate_quality': 1.0,
+            'substrate_type': 'standard',
 
         },
     'odorscape': {'odorscape': 'Gaussian',
@@ -422,12 +452,12 @@ all_null_dicts = {
                 'feeder': False,
                 'memory': False},
     'sim_params': {
-        'sim_id': None,
-        'path': None,
-        'sim_dur': 1.0,
-        'dt': 0.1,
+        'sim_ID': None,
+        'path': 'single_runs',
+        'duration': 1.0,
+        'timestep': 0.1,
         'Box2D': False,
-        'sample_dataset': 'reference'
+        'sample': 'reference'
     },
     'logn_dist': {
         'range': (0.0, 2.0),
@@ -450,15 +480,65 @@ all_null_dicts = {
         'operator': None,
         # 'diff': False,
         # 'cum': False,
-        'k0' : None,
-            'k_num' : None,
-            'k_den' : None,
-            'dst2source' : None,
-            'or2source' : None,
-            'dispersion' : False,
-'wrap_mode' : None
-    }
+        'k0': None,
+        'k_num': None,
+        'k_den': None,
+        'dst2source': None,
+        'or2source': None,
+        'dispersion': False,
+        'wrap_mode': None
+    },
+    'preprocessing': {
+        'rescale_by': None,
+        'drop_collisions': False,
+        'interpolate_nans': False,
+        'filter_f': None
+    },
+    'processing': {'types': None,
+                   'dsp_starts': None, 'dsp_stops': None,
+                   'tor_durs': None},
+    'annotation': {'bouts': None, 'track_point': None,
+                   'track_pars': None, 'chunk_pars': None,
+                   'vel_par': None, 'ang_vel_par': None, 'bend_vel_par': None, 'min_ang': 0.0,
+                   'non_chunks': False},
+    'enrich_aux': {'recompute': False,
+                   'mode': 'minimal',
+                   'source': None,
+                   },
+    'substrate' : substrate_dict['standard']
+
 }
+all_null_dicts['enrichment'] = {k: all_null_dicts[k] for k in
+                                ['preprocessing', 'processing', 'annotation', 'enrich_aux']}
+
+all_null_dicts['exp_conf'] = {'env_params': None,
+                              'sim_params': get_dict('sim_params'),
+                              'life_params': get_dict('life'),
+                              'collections': ['pose'],
+                              'enrichment': get_dict('enrichment')
+                              }
+
+all_null_dicts['batch_conf'] = {'exp': None,
+                                'space_search': get_dict('space_search'),
+                                'batch_methods': get_dict('batch_methods'),
+                                'optimization': None,
+                                'run_kwargs': {'save_data_flag': False},
+                                'post_kwargs': {},
+                                }
+
+all_null_dicts['food_params'] = {'source_groups': {},
+                                 'food_grid': None,
+                                 'source_units': {}}
+
+
+def base_enrich(**kwargs):
+    d = {'types': ['angular', 'spatial', 'source', 'dispersion', 'tortuosity'],
+         'dsp_starts': [0, 20], 'dsp_stops': [40, 80], 'tor_durs': [2, 5, 10, 20],
+         'min_ang': 5.0, 'bouts': ['stride', 'pause', 'turn']
+         }
+
+    d.update(**kwargs)
+    return get_dict('enrichment', **d)
 
 
 def get_dict_dtypes(name, **kwargs):
@@ -496,9 +576,10 @@ def get_dict_dtypes(name, **kwargs):
         'life':
             {
                 'epochs': List[Tuple[float, float]],
+                'epoch_qs': List[float],
                 'hours_as_larva': float,
-                'substrate_quality': float
-
+                'substrate_quality': float,
+                'substrate_type': list(substrate_dict.keys()),
             },
         'odorscape': {'odorscape': ['Gaussian', 'Diffusion'],
                       'grid_dims': tuple,
@@ -627,12 +708,12 @@ def get_dict_dtypes(name, **kwargs):
                     'memory': bool},
 
         'sim_params': {
-            'sim_id': str,
+            'sim_ID': str,
             'path': str,
-            'sim_dur': float,
-            'dt': float,
+            'duration': np.round(np.arange(0.0, 100.1, 0.1), 1).tolist(),
+            'timestep': np.round(np.arange(0.01, 1.01, 0.01), 2).tolist(),
             'Box2D': bool,
-            'sample_dataset': list(loadConfDict('Ref').keys())
+            'sample': list(loadConfDict('Ref').keys())
         },
         'logn_dist': {
             'range': Tuple[float, float],
@@ -652,19 +733,54 @@ def get_dict_dtypes(name, **kwargs):
             'exists': bool,
             'func': any,
             'const': any,
-            'operator' : [None, 'diff', 'cum', 'max', 'min', 'mean', 'std'],
+            'operator': [None, 'diff', 'cum', 'max', 'min', 'mean', 'std', 'final'],
             # 'diff': bool,
             # 'cum': bool,
-            'k0' : str,
-            'k_num' : str,
-            'k_den' : str,
+            'k0': str,
+            'k_num': str,
+            'k_den': str,
             'dst2source': Tuple[float, float],
             'or2source': Tuple[float, float],
             'dispersion': bool,
-        'wrap_mode' : [None, 'zero', 'positive']
-        }
+            'wrap_mode': [None, 'zero', 'positive']
+        },
+        'preprocessing': {
+            'rescale_by': float,
+            'drop_collisions': bool,
+            'interpolate_nans': bool,
+            'filter_f': float
+        },
+        'processing': {'types': ['angular', 'spatial', 'source', 'dispersion', 'tortuosity'],
+                       'dsp_starts': List[float], 'dsp_stops': List[float],
+                       'tor_durs': List[float]},
+        'annotation': {'bouts': ['stride', 'pause', 'turn'], 'track_point': str,
+                       'track_pars': List[str], 'chunk_pars': List[str],
+                       'vel_par': str, 'ang_vel_par': str, 'bend_vel_par': str, 'min_ang': float,
+                       'non_chunks': bool},
+        'enrich_aux': {'recompute': bool,
+                       'mode': ['minimal', 'full'],
+                       'source': Tuple[float, float],
+                       },
+        'substrate': { k : float for k in substrate_dict['standard'].keys()}
 
     }
+    all_dtypes['enrichment'] = {k: all_dtypes[k] for k in ['preprocessing', 'processing', 'annotation', 'enrich_aux']}
+    all_dtypes['exp_conf'] = {'env_params': str,
+                              'sim_params': dict,
+                              'life_params': dict,
+                              'collections': List[str],
+                              'enrichment': dict,
+                              }
+    all_dtypes['batch_conf'] = {'exp': str,
+                                'space_search': dict,
+                                'batch_methods': dict,
+                                'optimization': dict,
+                                'run_kwargs': dict,
+                                'post_kwargs': dict,
+                                }
+    all_dtypes['food_params'] = {'source_groups': dict,
+                                 'food_grid': dict,
+                                 'source_units': dict}
     if name in list(all_dtypes.keys()):
         return all_dtypes[name]
     elif name == 'distro':
@@ -728,17 +844,17 @@ def get_distro_dtypes(class_name, basic=True):
     return dtypes
 
 
-def sim_dict(sim_id=None, sim_dur=3, dt=0.1, path=None, Box2D=False, exp_type=None):
+def sim_dict(sim_ID=None, duration=3, dt=0.1, path=None, Box2D=False, exp_type=None):
     from lib.conf.conf import next_idx
     if exp_type is not None:
-        if sim_id is None:
-            sim_id = f'{exp_type}_{next_idx(exp_type)}'
+        if sim_ID is None:
+            sim_ID = f'{exp_type}_{next_idx(exp_type)}'
         if path is None:
             path = f'single_runs/{exp_type}'
     return {
-        'sim_id': sim_id,
-        'sim_dur': sim_dur,
-        'dt': dt,
+        'sim_ID': sim_ID,
+        'duration': duration,
+        'timestep': dt,
         'path': path,
         'Box2D': Box2D,
     }
@@ -781,3 +897,6 @@ def new_odor_dict(ids: list, means: list, stds=None) -> dict:
         odor_dict[id] = {'mean': m,
                          'std': s}
     return odor_dict
+
+
+
