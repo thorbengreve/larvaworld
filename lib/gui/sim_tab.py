@@ -9,7 +9,7 @@ from lib.aux.collecting import output_keys
 from lib.gui.gui_lib import CollapsibleDict, Collapsible, \
     named_bool_button, GraphList, graphic_button, t10_kws, col_kws, col_size, t24_kws, \
     t8_kws, \
-    t16_kws, t11_kws, t6_kws, t12_kws, t14_kws
+    t16_kws, t11_kws, t6_kws, t12_kws, t14_kws, t13_kws, t9_kws
 from lib.gui.tab import GuiTab, SelectionList
 from lib.gui.life_conf import life_conf
 from lib.sim.single_run import run_sim
@@ -41,28 +41,29 @@ class SimTab(GuiTab):
 
     def build(self):
         l_env = SelectionList(tab=self, conftype='Env', idx=1)
+        l_life = SelectionList(tab=self, conftype='Life', idx=1, with_dict=True, header_value='default',
+                           text_kws=t14_kws, value_kws=t10_kws, width=12, header_text_kws=t9_kws)
         l_sim = SelectionList(tab=self, conftype='Exp', actions=['load', 'save', 'delete', 'run'], progress=True,
-                              sublists={'env_params': l_env})
-        self.selectionlists = [l_sim, l_env]
+                              sublists={'env_params': l_env, 'life_params' : l_life})
+
         # s1 = self.build_sim_collapsible()
-        s1 = CollapsibleDict('sim_params', True, default=True, disp_name='Configuration')
+        s1 = CollapsibleDict('sim_params', True, default=True, disp_name='Configuration', text_kws=t8_kws)
         output_dict = dict(zip(output_keys, [False] * len(output_keys)))
         s2 = CollapsibleDict('Output', False, dict=output_dict, auto_open=False)
-        s3 = CollapsibleDict('life', False, default=True,
-                             next_to_header=[graphic_button('edit', 'CONF_LIFE',
-                                                            tooltip='Configure the life history of the simulated larvae.')])
+        # s3 = CollapsibleDict('life', False, default=True,header_dict=loadConfDict('Life'),
+        #                       header_value='default', header_list_width=14,text_kws=t14_kws, value_kws=t10_kws)
 
+
+        self.selectionlists = [l_sim, l_env, l_life]
         g1 = GraphList(self.name)
         l_conf = [[sg.Col([
-            l_sim.l,
-            l_env.l,
-            *[i.get_layout() for i in [s1, s2, s3]],
+            *[i.get_layout() for i in [l_sim, l_env,s1, s2, l_life]],
             [g1.get_layout()]
         ])]]
-        l = [[sg.Col(l_conf, **col_kws, size=col_size(0.25)), g1.canvas]]
+        l = [[sg.Col(l_conf, **col_kws, size=col_size(0.2)), g1.canvas]]
 
         c = {}
-        for i in [s1, s2, s3]:
+        for i in [s1, s2, l_life]:
             c.update(i.get_subdicts())
         g = {g1.name: g1}
         d={}
@@ -78,7 +79,11 @@ class SimTab(GuiTab):
         default_vis=dtypes.get_dict('visualization')
         vis_kwargs = c['Visualization'].get_dict(v, w) if 'Visualization' in list(
             c.keys()) else default_vis
-        dd = run_sim(**conf, vis_kwargs=vis_kwargs, progress_bar=w[p.k])
+        kws={**conf,
+             'vis_kwargs' : vis_kwargs,
+             'progress_bar' : w[p.k]
+             }
+        dd = run_sim(**kws)
         if dd is not None:
             w[p.k_complete].update(visible=True)
             if 'analysis_data' in d.keys() :
@@ -94,15 +99,15 @@ class SimTab(GuiTab):
         return d,g
 
 
-    def eval(self, e, v, w, c, d, g):
-        if e == 'CONF_LIFE':
-            c['Life'].update(w, life_conf())
+    # def eval(self, e, v, w, c, d, g):
+    #     if e == 'CONF_LIFE':
+    #         c['Life'].update(w, life_conf())
 
     def update(self, w,  c, conf, id):
         # sim = conf['sim_params']
         output_dict = dict(zip(output_keys, [True if k in conf['collections'] else False for k in output_keys]))
         c['Output'].update(w, output_dict)
-        c['life'].update(w, conf['life_params'])
+        # c['life'].update_header(w, conf['life_params'])
 
         sim=copy.deepcopy(conf['sim_params'])
         sim.update({'sim_ID' : f'{id}_{next_idx(id)}', 'path' : f'single_runs/{id}'})
@@ -129,7 +134,7 @@ class SimTab(GuiTab):
                 'sim_params': c['sim_params'].get_dict(v, w),
                 # 'sim_params': sim,
                 'collections': [k for k in output_keys if c['Output'].get_dict(v, w)[k]],
-                'life_params': c['life'].get_dict(v, w),
+                # 'life_params': c['life'].get_dict(v, w),
                 'enrichment': loadConf(v[self.selectionlists[0].k], 'Exp')['enrichment'],
                 }
         return conf

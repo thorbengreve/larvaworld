@@ -5,6 +5,7 @@ from lib.gui.analysis_tab import AnalysisTab
 from lib.gui.batch_tab import BatchTab
 from lib.gui.env_tab import EnvTab
 from lib.gui.life_tab import LifeTab
+from lib.gui.preprocess_tab import PreprocessTab
 from lib.gui.sim_tab import SimTab
 from lib.gui.tab import IntroTab, VideoTab, TutorialTab
 from lib.gui.model_tab import ModelTab
@@ -21,14 +22,15 @@ class LarvaworldGui:
         self.tab_dict = {
             'introduction': (IntroTab,None),
             'tutorials': (TutorialTab,None),
-                         'larva-model': (ModelTab,'Model'),
-                         'environment': (EnvTab,'Env'),
-                         'life-history': (LifeTab,'Life'),
-                         'simulation': (SimTab,'Exp'),
-                         'batch-run': (BatchTab,'Batch'),
-                         'analysis': (AnalysisTab,None),
-                         'videos': (VideoTab,None),
-                         'settings': (SettingsTab,None)
+                         'larva-model': (ModelTab,'Model', 'model_conf'),
+                         'environment': (EnvTab,'Env', 'env_conf'),
+                         'life-history': (LifeTab,'Life', 'life'),
+                         'simulation': (SimTab,'Exp', 'exp_conf'),
+                         'batch-run': (BatchTab,'Batch', 'batch_conf'),
+                         'analysis': (AnalysisTab,None,None),
+                         'groups': (PreprocessTab,'Group',None),
+                         'videos': (VideoTab,None,None),
+                         'settings': (SettingsTab,None,None)
                          }
 
         if tabs is None:
