@@ -3,6 +3,8 @@ from typing import List, Tuple, Union
 import numpy as np
 from siunits import BaseUnit, Composite, DerivedUnit
 
+import lib.aux.functions as fun
+
 # from lib.conf.par import runtime_pars
 
 vis_render_dtypes = {
@@ -257,6 +259,7 @@ def null_distro(class_name, basic=True):
                 pass
     return distro
 
+
 # Compound densities (g/cm**3)
 substrate_dict = {
     'standard': {
@@ -268,13 +271,13 @@ substrate_dict = {
         'cornmeal': 0,
     },
     'cornmeal': {
-                'glucose':  517 / 17000,
-                'dextrose': 1033 / 17000,
-                'saccharose': 0,
-                'yeast': 0,
-                'agar': 93 / 17000,
-                'cornmeal': 1716 / 17000,
-            },
+        'glucose': 517 / 17000,
+        'dextrose': 1033 / 17000,
+        'saccharose': 0,
+        'yeast': 0,
+        'agar': 93 / 17000,
+        'cornmeal': 1716 / 17000,
+    },
     'PED_tracker': {
         'glucose': 0,
         'dextrose': 0,
@@ -283,6 +286,15 @@ substrate_dict = {
         'agar': 500 * 2 / 200,
         'cornmeal': 0,
     }
+}
+
+null_bout_dist = {
+    'fit': True,
+    'range': [None, None],
+    'name': None,
+    'mu': None,
+    'sigma': None,
+    # 'c': None
 }
 
 all_null_dicts = {
@@ -418,8 +430,11 @@ all_null_dicts = {
         'feeder_phi_range': [0.0, 0.0],
         'attenuation': 1.0
     },
-    'intermitter': {'pause_dist': 'fit',
-                    'stridechain_dist': 'fit',
+    'intermitter': {
+        # 'pause_dist': 'fit',
+        'pause_dist': null_bout_dist,
+                    # 'stridechain_dist': 'fit',
+                    'stridechain_dist': null_bout_dist,
                     'crawl_bouts': True,
                     'feed_bouts': False,
                     'crawl_freq': 10 / 7,
@@ -466,6 +481,12 @@ all_null_dicts = {
         'mu': 1.0,
         'sigma': 0.0
     },
+    # 'levy_dist': {
+    #     'range': (0.0, 2.0),
+    #     'name': 'levy',
+    #     'mu': 1.0,
+    #     'sigma': 0.0
+    # },
     'par': {
         'p': None,
         'u': None,
@@ -506,7 +527,7 @@ all_null_dicts = {
                    'mode': 'minimal',
                    'source': None,
                    },
-    'substrate' : substrate_dict['standard']
+    'substrate': substrate_dict['standard']
 
 }
 all_null_dicts['enrichment'] = {k: all_null_dicts[k] for k in
@@ -546,47 +567,60 @@ def base_enrich(**kwargs):
 def get_dict_dtypes(name, **kwargs):
     from lib.conf import par_conf
     from lib.conf.conf import loadConfDict
+
+
+
+    bout_dist_dtypes = {
+        'fit': bool,
+        'range': (0.0, 100.0),
+        # 'name': str,
+        'name': ['powerlaw', 'exponential', 'lognormal', 'lognormal-powerlaw', 'levy', 'normal', 'uniform'],
+        'mu': float,
+        'sigma': float,
+        # 'c': float
+    }
+
     all_dtypes = {
         'odor':
             {'odor_id': str,
-             'odor_intensity': float,
-             'odor_spread': float
+             'odor_intensity': fun.value_list(end=500.0, steps=100, decimals=2),
+             'odor_spread': fun.value_list(end=100.0, steps=1000, decimals=2)
              },
         'food':
             {
-                'radius': float,
-                'amount': float,
-                'quality': float,
+                'radius': fun.value_list(end=10.0, steps=100, decimals=2),
+                'amount': fun.value_list(end=100.0, steps=1000, decimals=2),
+                'quality': fun.value_list(),
                 'shape_vertices': List[Tuple[float, float]],
                 'can_be_carried': bool,
-                'type': ['standard', 'cornmeal']
+                'type': list(substrate_dict.keys())
             },
         'food_grid':
             {
                 'unique_id': str,
-                'grid_dims': Tuple[int, int],
-                'initial_value': float,
+                'grid_dims': (10,1000),
+                'initial_value': fun.value_list(end=100.0, steps=1000, decimals=2),
                 'distribution': ['uniform'],
-                'type': ['standard', 'cornmeal']
+                'type': list(substrate_dict.keys())
             },
         'arena':
             {
-                'arena_xdim': float,
-                'arena_ydim': float,
+                'arena_xdim': fun.value_list(end=10.0, steps=1000, decimals=3),
+                'arena_ydim': fun.value_list(end=10.0, steps=1000, decimals=3),
                 'arena_shape': ['circular', 'rectangular']
             },
         'life':
             {
                 'epochs': List[Tuple[float, float]],
                 'epoch_qs': List[float],
-                'hours_as_larva': np.round(np.arange(0.0, 250.001, 1.0), 1).tolist(),
-                'substrate_quality': np.round(np.arange(0.0, 1.001, 0.01), 3).tolist(),
+                'hours_as_larva': fun.value_list(end=250, steps=250, integer=True),
+                'substrate_quality': fun.value_list(),
                 'substrate_type': list(substrate_dict.keys()),
             },
         'odorscape': {'odorscape': ['Gaussian', 'Diffusion'],
-                      'grid_dims': tuple,
-                      'evap_const': float,
-                      'gaussian_sigma': Tuple[float, float],
+                      'grid_dims': (10, 1000),
+                      'evap_const': fun.value_list(),
+                      'gaussian_sigma': (0.0, 10.0),
                       },
         'odor_gain': {
             'unique_id': str,
@@ -600,15 +634,15 @@ def get_dict_dtypes(name, **kwargs):
                 'arena_shape': ['circular', 'rectangular']
             },
             'env_params': [''] + list(loadConfDict('Env').keys()),
-            'track_point': int,
+            'track_point': fun.value_list(1,12, steps=12, integer=True),
             'dynamic_color': [None, 'lin_color', 'ang_color'],
             'agent_ids': list,
-            'time_range': Tuple[float, float],
+            'time_range': (0.0,3600.0),
             'transposition': [None, 'origin', 'arena', 'center'],
-            'fix_point': int,
+            'fix_point': fun.value_list(1,12, steps=12, integer=True),
             'secondary_fix_point': ['', 1, -1],
             'use_background': bool,
-            'draw_Nsegs': int,
+            'draw_Nsegs': fun.value_list(1,12, steps=12, integer=True),
         },
         'optimization': {
             'fit_par': str,
@@ -618,9 +652,9 @@ def get_dict_dtypes(name, **kwargs):
                 'abs': bool,
             },
             'minimize': bool,
-            'threshold': float,
-            'max_Nsims': int,
-            'Nbest': int
+            'threshold': fun.value_list(),
+            'max_Nsims': fun.value_list(2,1002, steps=1000, integer=True),
+            'Nbest': fun.value_list(2,42, steps=40, integer=True)
         },
         'batch_methods': {
             'run': ['null', 'default', 'deb', 'odor_preference'],
@@ -671,27 +705,31 @@ def get_dict_dtypes(name, **kwargs):
                    'freq_range': Tuple[float, float],
                    },
         'interference': {
-            'crawler_phi_range': Tuple[float, float],  # np.pi * 0.55,  # 0.9, #,
-            'feeder_phi_range': Tuple[float, float],
-            'attenuation': float
+            'crawler_phi_range': (0.0, 2.0),  # np.pi * 0.55,  # 0.9, #,
+            # 'crawler_phi_range': Tuple[float, float],  # np.pi * 0.55,  # 0.9, #,
+            'feeder_phi_range': (0.0, 2.0),
+            'attenuation': fun.value_list()
         },
-        'intermitter': {'pause_dist': dict,
-                        'stridechain_dist': dict,
+        'intermitter': {
+            'pause_dist': bout_dist_dtypes,
+            # 'pause_dist': dict,
+                        'stridechain_dist': bout_dist_dtypes,
+                        # 'stridechain_dist': dict,
                         'crawl_bouts': bool,
                         'feed_bouts': bool,
-                        'crawl_freq': float,
-                        'feed_freq': float,
-                        'feeder_reoccurence_rate': float,
-                        'EEB_decay': float,
-                        'EEB': float},
+                        'crawl_freq': fun.value_list(end=2.0, steps=200),
+                        'feed_freq': fun.value_list(end=4.0, steps=400),
+                        'feeder_reoccurence_rate': fun.value_list(),
+                        'EEB_decay': fun.value_list(end=2.0, steps=200),
+                        'EEB': fun.value_list()},
         'olfactor': {
             'perception': ['log', 'linear'],
-            'olfactor_noise': float,
-            'decay_coef': float},
-        'feeder': {'feeder_freq_range': Tuple[float, float],
-                   'feeder_initial_freq': float,
-                   'feed_radius': float,
-                   'V_bite': float},
+            'olfactor_noise': fun.value_list(),
+            'decay_coef': fun.value_list(end=2.0, steps=200)},
+        'feeder': {'feeder_freq_range':(0.0, 4.0),
+                   'feeder_initial_freq': fun.value_list(end=4.0, steps=400),
+                   'feed_radius': fun.value_list(start=0.01, end=1.0, steps=1000, decimals=2),
+                   'V_bite': fun.value_list(start=0.0001, end=0.01, steps=1000, decimals=4)},
         'memory': {'DeltadCon': float,
                    'state_spacePerOdorSide': int,
                    'gain_space': List[float],
@@ -764,7 +802,7 @@ def get_dict_dtypes(name, **kwargs):
                        'mode': ['minimal', 'full'],
                        'source': Tuple[float, float],
                        },
-        'substrate': { k : float for k in substrate_dict['standard'].keys()}
+        'substrate': {k: float for k in substrate_dict['standard'].keys()}
 
     }
     all_dtypes['enrichment'] = {k: all_dtypes[k] for k in ['preprocessing', 'processing', 'annotation', 'enrich_aux']}
@@ -799,12 +837,12 @@ def get_agent_dtypes(class_name):
     dtypes = {
         'unique_id': str,
         'default_color': str,
-        'group': str,
+        # 'group': str,
     }
     if class_name in ['Larva', 'LarvaSim', 'LarvaReplay']:
-        dtypes = {**dtypes, **get_dict_dtypes('odor')}
+        dtypes = {**dtypes,'group': str, **get_dict_dtypes('odor')}
     elif class_name in ['Source', 'Food']:
-        dtypes = {**dtypes, **get_dict_dtypes('odor'), **get_dict_dtypes('food'), 'can_be_carried': bool,
+        dtypes = {**dtypes,'group': str, **get_dict_dtypes('odor'), **get_dict_dtypes('food'), 'can_be_carried': bool,
                   'pos': Tuple[float, float]}
     elif class_name in ['Border']:
         dtypes = {**dtypes, 'width': float, 'points': List[Tuple[float, float]]}
@@ -900,6 +938,3 @@ def new_odor_dict(ids: list, means: list, stds=None) -> dict:
         odor_dict[id] = {'mean': m,
                          'std': s}
     return odor_dict
-
-
-

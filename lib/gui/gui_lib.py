@@ -10,7 +10,7 @@ import numpy as np
 import PySimpleGUI as sg
 import operator
 
-from PySimpleGUI import BUTTON_TYPE_COLOR_CHOOSER, Button
+from PySimpleGUI import BUTTON_TYPE_COLOR_CHOOSER, Button, Element, ELEM_TYPE_INPUT_SPIN, Pane
 from matplotlib import ticker
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
@@ -718,7 +718,7 @@ t8_kws = {'size': (8, 1)
 t6_kws = {'size': (6, 1)
           }
 t9_kws = {'size': (9, 1)
-           }
+          }
 t10_kws = {'size': (10, 1)
            }
 t12_kws = {'size': (12, 1)
@@ -782,8 +782,10 @@ def graphic_button(name, key, **kwargs):
          'border_width': 0,
          # **b_kws
          }
-
-    return sg.B(image_data=dic[name], k=key, **c, **kwargs)
+    b=sg.B(image_data=dic[name], k=key, **c, **kwargs)
+    # print(b.Target)
+    # print(b.Position)
+    return b
 
 
 # sg.theme('LightGreen')
@@ -896,7 +898,6 @@ def retrieve_value(v, t):
         elif t == Tuple[int, int]:
             vv = tuple([int(x) for x in v.split()])
     elif t == Type and type(v) == str:
-        # print(t,v)
         if 'str' in v:
             vv = str
         elif 'float' in v:
@@ -907,7 +908,6 @@ def retrieve_value(v, t):
             vv = int
         else:
             vv = locate(v)
-            # print(vv)
 
     elif t == tuple or t == list:
         try:
@@ -1061,21 +1061,25 @@ def update_window_from_dict(window, dic, prefix=None):
             if prefix is not None:
                 k = f'{prefix}_{k}'
             if type(v) == bool:
-                window[f'TOGGLE_{k}'].set_state(v)
+                b=window[f'TOGGLE_{k}']
+                if isinstance(b, BoolButton) :
+                    b.set_state(v)
+
             elif type(v) == dict:
-                if prefix is not None:
-                    new_prefix = k
-                else:
-                    new_prefix = None
+                new_prefix = k if prefix is not None else None
                 update_window_from_dict(window, v, prefix=new_prefix)
+            elif isinstance(window[k], TupleSpin):
+                # print(k)
+                window[k].update(window, v)
             elif v is None:
                 window.Element(k).Update(value='')
             else:
                 window.Element(k).Update(value=v)
 
-def save_conf_window(conf, conftype, disp=None) :
+
+def save_conf_window(conf, conftype, disp=None):
     if disp is None:
-        disp=conftype
+        disp = conftype
     l = [
         named_list_layout(f'Store new {disp}', f'{disp}_ID', list(loadConfDict(conftype).keys()),
                           readonly=False, enable_events=False),
@@ -1088,6 +1092,7 @@ def save_conf_window(conf, conftype, disp=None) :
     elif e == 'Cancel':
         return None
 
+
 class SectionDict:
     def __init__(self, name, dict, type_dict=None, toggled_subsections=True):
         self.init_dict = dict
@@ -1098,18 +1103,12 @@ class SectionDict:
         self.subdicts = {}
 
     def init_section(self, text_kws={}, value_kws={}):
-        # if self.init_dict is not None:
-        #     dic = self.init_dict
-        # else:
-        #     print(self.name, 'dddddddddddddddd')
-        #     return []
         l = []
         for k, v in self.init_dict.items():
             k_disp = get_disp_name(k)
             k0 = f'{self.name}_{k}'
             if type(v) == bool:
                 l.append(named_bool_button(k_disp, v, k0))
-                # l.append(named_bool_button(k, v, k0))
             elif type(v) == dict:
                 type_dict = self.type_dict[k] if self.type_dict is not None else None
                 self.subdicts[k0] = CollapsibleDict(k0, True, disp_name=k, dict=v, type_dict=type_dict,
@@ -1123,14 +1122,19 @@ class SectionDict:
             else:
                 temp = sg.In(v, key=k0, **value_kws)
                 if self.type_dict is not None:
+                    # print(k, self.type_dict[k], type(self.type_dict[k]))
                     if type(self.type_dict[k]) == list:
-
-                        if type(v) == float:
-                            # print(self.name, v, type(v))
-                            temp = sg.Spin(values=self.type_dict[k], initial_value=v, key=k0, **value_kws)
+                        values=self.type_dict[k]
+                        if all([type(i) in [int,float] for i in values]):
+                            temp = sg.Spin(values=values, initial_value=v, key=k0, **value_kws)
                         else:
-                            temp = sg.Combo(self.type_dict[k], default_value=v, key=k0, enable_events=True,
+                            temp = sg.Combo(values, default_value=v, key=k0, enable_events=True,
                                             readonly=True, **value_kws)
+                    elif type(self.type_dict[k]) in [tuple, Tuple[float, float], Tuple[int, int]]:
+                        # print(k, v, self.type_dict[k], type(self.type_dict[k]))
+                        temp = TupleSpin(range=self.type_dict[k], initial_value=v, key=k0, **value_kws)
+
+                            # temp = sg.Spin(values=self.type_dict[k], initial_value=v, key=k0, **value_kws)
                 l.append([sg.Text(f'{k_disp}:', **text_kws), temp])
         return l
 
@@ -1172,6 +1176,44 @@ class SectionDict:
         return subdicts
 
 
+class TupleSpin(Pane) :
+    def __init__(self, initial_value, range, key, steps=100, decimals=2, **value_kws):
+        w,h=w_kws['default_button_element_size']
+        # size=(int(w/2), h)
+        value_kws.update({'size': (w-1,h)})
+        self.steps = steps
+        self.initial_value = initial_value
+        v0,v1=initial_value if type(initial_value)==tuple else (None,None)
+        self.integer=True if all([type(v0)==int, type(v1)==int]) else False
+        r0, r1 = self.range =range
+        arange = fun.value_list(r0,r1,self.integer, steps, decimals)
+        self.key=key
+        self.k0,self.k1=[f'{key}_{i}' for i in [0,1]]
+        self.s0 = sg.Spin(values=arange, initial_value=v0, key=self.k0,**value_kws)
+        self.s1 = sg.Spin(values=arange, initial_value=v1, key=self.k1, **value_kws)
+        super().__init__(pane_list=[self.get_layout()], key=self.key)
+
+    def get(self):
+        return self.s0.get(), self.s1.get()
+
+    def get_layout(self):
+        l = sg.Col([[self.s0, self.s1]])
+        return l
+
+    def update(self, window, value):
+        if value not in [None, '', (None,None), [None,None]] :
+            v0,v1=value
+        else :
+            v0,v1=['','']
+        window.Element(self.k0).Update(value=v0)
+        window.Element(self.k1).Update(value=v1)
+
+
+        # return window
+
+
+
+
 def named_bool_button(name, state, toggle_name=None):
     if toggle_name is None:
         toggle_name = name
@@ -1210,33 +1252,34 @@ class BoolButton(Button):
         return image
 
 
-def named_list_layout(text, key, choices, default_value=None,drop_down=True,list_width=20,
-                      readonly=True, enable_events=True, single_line=True, next_to_header=None, as_col=True, list_kws={},
+def named_list_layout(text, key, choices, default_value=None, drop_down=True, list_width=20,
+                      readonly=True, enable_events=True, single_line=True, next_to_header=None, as_col=True,
+                      list_kws={},
                       header_text_kws=None):
-    if header_text_kws is None :
-        header_text_kws={'size' : (len(text),1)}
-    t=[sg.Text(text, **header_text_kws)]
-    if next_to_header is not None :
-        t+=next_to_header
-    if drop_down :
-        l=[sg.Combo(choices, key=key, default_value=default_value,
-                   size=(list_width,1),enable_events=enable_events, readonly=readonly, **list_kws)]
-    else :
+    if header_text_kws is None:
+        header_text_kws = {'size': (len(text), 1)}
+    t = [sg.Text(text, **header_text_kws)]
+    if next_to_header is not None:
+        t += next_to_header
+    if drop_down:
+        l = [sg.Combo(choices, key=key, default_value=default_value,
+                      size=(list_width, 1), enable_events=enable_events, readonly=readonly, **list_kws)]
+    else:
         l = [sg.Listbox(choices, key=key, default_values=[default_value],
-                       size=(list_width,len(choices)),enable_events=enable_events, **list_kws)]
-    if single_line :
+                        size=(list_width, len(choices)), enable_events=enable_events, **list_kws)]
+    if single_line:
         return t + l
-    else :
-        if as_col :
+    else:
+        if as_col:
             return sg.Col([t, l])
-        else :
-            return[t, l]
+        else:
+            return [t, l]
 
 
 class Collapsible:
     def __init__(self, name, state, content, disp_name=None, toggle=None, disabled=False, next_to_header=None,
-                 auto_open=False, header_dict=None, header_value=None, header_list_width=10,header_list_kws={},
-                 header_text_kws=t12_kws,header_key=None, **kwargs):
+                 auto_open=False, header_dict=None, header_value=None, header_list_width=10, header_list_kws={},
+                 header_text_kws=t12_kws, header_key=None, **kwargs):
         self.name = name
         if disp_name is None:
             disp_name = get_disp_name(name)
@@ -1247,9 +1290,9 @@ class Collapsible:
         self.sec_symbol = self.get_symbol()
         self.header_dict = header_dict
         self.header_value = header_value
-        if header_key is None :
-            header_key =f'SELECT LIST {name}'
-        self.header_key=header_key
+        if header_key is None:
+            header_key = f'SELECT LIST {name}'
+        self.header_key = header_key
         if header_dict is None:
             header_disp = [sg.T(disp_name, enable_events=True, text_color='black', **header_text_kws)]
         else:
@@ -1273,13 +1316,7 @@ class Collapsible:
     def get_layout(self, as_col=True):
         return [sg.Col(self.layout)] if as_col else self.layout
 
-
-
     def update(self, window, dict, use_prefix=True):
-        # print(self.header_dict,list(dict.keys())[0])
-        # if self.header_dict is not None and list(dict.keys())[0] in self.header_dict.keys():
-        #     self.update_header(window, list(dict.values())[0])
-        # else :
         if dict is None:
             self.disable(window)
         elif self.toggle == False:
@@ -1294,9 +1331,6 @@ class Collapsible:
         self.header_value = id
         window.Element(self.header_key).Update(value=id)
         self.update(window, self.header_dict[id])
-
-
-
 
     def click(self, window):
         if self.state is not None:
@@ -1346,19 +1380,24 @@ class CollapsibleTable(Collapsible):
         else:
             self.header = None
         self.headings = headings
+        self.Ncols = len(headings)
         self.col_widths = []
+        self.col_visible=[True]*self.Ncols
+        self.color_idx = None
         for i, p in enumerate(self.headings):
             if p in ['id', 'group']:
                 self.col_widths.append(10)
             elif p in ['color']:
                 self.col_widths.append(8)
+                self.color_idx=i
+                self.col_visible[i]=False
             elif p in ['model']:
                 self.col_widths.append(14)
             elif type_dict[p] in [int, float]:
-                self.col_widths.append(np.max([len(p), 5]))
+                self.col_widths.append(np.max([len(p), 6]))
             else:
                 self.col_widths.append(10)
-        self.Ncols = len(headings)
+
         self.data = self.set_data(dict)
         self.key = f'TABLE {name}'
         content = self.get_content()
@@ -1390,25 +1429,31 @@ class CollapsibleTable(Collapsible):
 
     def get_content(self):
         content = [[sg.Table(values=self.data[:][:], headings=self.headings, col_widths=self.col_widths,
-                            max_col_width=30, background_color='lightblue',
-                            auto_size_columns=False,
-                            # display_row_numbers=True,
-                            justification='center',
-                            font=w_kws['font'],
-                            num_rows=len(self.data),
-                            alternating_row_color='lightyellow',
-                            key=self.key
-                            )]]
+                             max_col_width=30, background_color='lightblue',header_font=('Helvetica', 8, 'bold'),
+                             auto_size_columns=False,
+                             visible_column_map=self.col_visible,
+                             # display_row_numbers=True,
+                             justification='center',
+                             font=w_kws['font'],
+                             num_rows=len(self.data),
+                             alternating_row_color='lightyellow',
+                             key=self.key
+                             )]]
         return content
 
     def update(self, window, dic, use_prefix=True):
         self.dict = dic
         self.data = self.set_data(dic)
-        window[self.key].update(values=self.data, num_rows=len(self.data))
-        if self.data[0][0] != '':
-            self.open(window)
-        else:
-            self.close(window)
+        if self.color_idx is not None :
+            row_cols = []
+            for i in range(len(self.data)) :
+                c0=self.data[i][self.color_idx]
+                c2,c1 = fun.invert_color(c0, return_self=True) if c0!='' else ['lightblue', 'black']
+                row_cols.append((i,c1,c2))
+        else :
+            row_cols=None
+        window[self.key].update(values=self.data, num_rows=len(self.data), row_colors=row_cols)
+        self.open(window) if self.data[0][0] != '' else self.close(window)
 
     def edit_table(self, window):
         if self.header is not None:
@@ -1427,7 +1472,7 @@ class CollapsibleTable(Collapsible):
 
 class CollapsibleDict(Collapsible):
     def __init__(self, name, state, dict=None, dict_name=None, type_dict=None, toggled_subsections=True, default=False,
-                 text_kws={},value_kws={},**kwargs):
+                 text_kws={}, value_kws={}, **kwargs):
         if dict_name is None:
             dict_name = name
         self.dict_name = dict_name
@@ -1436,7 +1481,7 @@ class CollapsibleDict(Collapsible):
             type_dict = dtypes.get_dict_dtypes(name)
         self.sectiondict = SectionDict(name=dict_name, dict=dict, type_dict=type_dict,
                                        toggled_subsections=toggled_subsections)
-        content = self.sectiondict.init_section(text_kws=text_kws,value_kws=value_kws)
+        content = self.sectiondict.init_section(text_kws=text_kws, value_kws=value_kws)
         super().__init__(name, state, content, **kwargs)
 
     def get_dict(self, values, window, check_toggle=True):
@@ -1453,11 +1498,12 @@ class CollapsibleDict(Collapsible):
         all_subdicts = {**subdicts, **self.sectiondict.get_subdicts()}
         return all_subdicts
 
-class Table(sg.Table) :
+
+class Table(sg.Table):
     def add_row(self, window, row, sort_idx=None):
-        vs=self.get()
+        vs = self.get()
         vs.append(row)
-        if sort_idx is not None :
+        if sort_idx is not None:
             vs.sort(key=lambda x: x[sort_idx])
         # self.epochs.append([t1, t2, q])
         # self.epochs.sort(key=lambda x: x[0])
@@ -1578,7 +1624,9 @@ def object_menu(selected, **kwargs):
 
 class GraphList:
     def __init__(self, name, fig_dict={}, next_to_header=None, default_values=None,
-                 canvas_size=(1200, 1200), list_size=None, list_header='Graphs', auto_eval=True):
+                 canvas_size=(1000, 800), list_size=None, list_header='Graphs', auto_eval=True,
+                 canvas_kws={'background_color':'Lightblue'}, graph=False,
+                 canvas_col_kws={'scrollable':False, 'vertical_scroll_only':False, 'expand_y':True, 'expand_x':True}):
         self.auto_eval = auto_eval
         self.list_size = list_size
         self.list_header = list_header
@@ -1587,7 +1635,7 @@ class GraphList:
         self.next_to_header = next_to_header
         self.fig_dict = fig_dict
         self.layout, self.list_key = self.init_layout(name, fig_dict, default_values)
-        self.canvas, self.canvas_key = self.init_canvas(name)
+        self.canvas, self.canvas_key, self.canvas_element = self.init_canvas(name, canvas_kws, canvas_col_kws, graph)
         self.fig_agg = None
         self.draw_key = 'unreachable'
 
@@ -1605,11 +1653,18 @@ class GraphList:
                                  key=list_key, auto_size_text=True)]]
         return l, list_key
 
-    def init_canvas(self, name):
+    def init_canvas(self, name, canvas_kws,canvas_col_kws, graph=False):
         canvas_key = f'{name}_CANVAS'
-        canvas = sg.Col([[sg.Canvas(size=self.canvas_size, key=canvas_key, background_color='Lightblue')]],
-                        scrollable=False, vertical_scroll_only=False, expand_y=True, expand_x=True)
-        return canvas, canvas_key
+        kws={
+            # 'size': self.canvas_size,
+             'key' :canvas_key,
+             **canvas_kws}
+        if graph :
+            g=sg.Graph(canvas_size=self.canvas_size, **kws)
+        else :
+            g = sg.Canvas(size=self.canvas_size,**kws)
+        canvas = sg.Col([[g]],**canvas_col_kws)
+        return canvas, canvas_key, g
 
     def draw_fig(self, window, fig):
         if self.fig_agg:
@@ -1669,9 +1724,8 @@ class ButtonGraphList(GraphList):
                 self.fig, self.save_to, self.save_as = self.func(datasets=list(data.values()), labels=list(data.keys()),
                                                                  return_fig=True, **self.func_kwargs)
                 self.draw_fig(window, self.fig)
-            except:
-                print('Plot not available for these datasets')
-                self.fig, self.save_to, self.save_as = None, '', ''
+            except :
+                print('Plot not available')
 
     def save_fig(self):
         if self.fig is not None:
@@ -1878,7 +1932,6 @@ class DynamicGraph:
         self.fig_agg = draw_canvas(self.canvas, self.fig)
 
 
-
 def check_collapsibles(window, event, values, collapsibles):
     if event.startswith('OPEN SEC'):
         sec = event.split()[-1]
@@ -1907,7 +1960,7 @@ def default_run_window(w, e, v, c={}, g={}):
     #     break
     # check_toggles(window, event)
     # check_collapsibles(window, event, collapsibles)
-    check_togglesNcollapsibles(w, e, v,c)
+    check_togglesNcollapsibles(w, e, v, c)
     for name, graph_list in g.items():
         if e == graph_list.list_key:
             graph_list.evaluate(w, v[graph_list.list_key])
@@ -1925,3 +1978,9 @@ def load_shortcuts():
             conf['keys'].update(dic)
         conf['pygame_keys'] = {k: dtypes.get_pygame_key(v) for k, v in conf['keys'].items()}
     return conf
+
+
+def gui_terminal(size=(window_size[0], int(window_size[1] / 3))):
+    return sg.Output(size=size, key='Terminal', background_color='black', text_color='white',
+                     echo_stdout_stderr=True, font=('Helvetica', 8, 'normal'),
+                     tooltip='Terminal output')
