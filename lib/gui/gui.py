@@ -13,6 +13,7 @@ from lib.gui.model_tab import ModelTab
 from lib.gui.settings_tab import SettingsTab
 import lib.gui.gui_lib as gui
 import lib.aux.functions as fun
+import lib.conf.dtype_dicts as dtypes
 
 matplotlib.use('TkAgg')
 
@@ -80,7 +81,8 @@ class LarvaworldGui:
     def build(self, tabs):
         ls, cs, ds, gs, ts = [], {}, {}, {}, {}
         for n in tabs:
-            ts[n] = self.tab_dict[n][0](name=n, gui=self)
+            ii=self.tab_dict[n]
+            ts[n] = ii[0](name=n, gui=self, conftype=ii[1])
             l, c, d, g = ts[n].build()
             cs.update(c)
             ds.update(d)
@@ -95,3 +97,17 @@ class LarvaworldGui:
         l0 = [[sg.Pane([sg.vtop(l_tabs), sg.vbottom(self.terminal)], handle_size=30)]]
         # l0 = [[sg.Pane([sg.Col([l_tabs]), sg.Col([[self.terminal]])], handle_size=30)]]
         return l0, cs, ds, gs, ts
+
+    def get_vis_kwargs(self, v):
+        c=self.collapsibles
+        w=self.window
+        vis_kwargs=c['Visualization'].get_dict(v, w) if 'Visualization' in list(
+            c.keys()) else dtypes.get_dict('visualization')
+        return vis_kwargs
+
+    def get_replay_kwargs(self, v):
+        c=self.collapsibles
+        w=self.window
+        replay_kwargs=c['Replay'].get_dict(v, w) if 'Replay' in list(
+            c.keys()) else dtypes.get_dict('replay', arena_pars=None)
+        return replay_kwargs

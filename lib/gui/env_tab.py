@@ -16,19 +16,6 @@ class EnvTab(GuiTab):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.canvas_size=(800,800)
-        # SL=self.k_S, self.k_L='SOURCE','LARVA'
-        # SLg=self.k_S_g, self.k_L_g=[f'{i}_group' for i in SL]
-        # self.k_S_0, self.k_L_0=[f'{i}_id' for i in SL]
-        # self.k_S_1, self.k_L_1=[f'{i}_single' for i in SL]
-        # self.k_S_d, self.k_L_d=[f'{i}_DISTRO' for i in SL]
-        # SLo=self.k_S_o, self.k_L_o=[f'{i}_ODOR' for i in SL]
-        # self.kT_S_o, self.kT_L_o=[f'TOGGLE_{i}' for i in SLo]
-        # self.k_S_o0, self.k_L_o0=[f'{i}_odor_id' for i in SLo]
-        # self.k_S_g0, self.k_L_g0=[f'{i}_id' for i in SLg]
-        # self.k_S_oM, self.k_L_oM=[f'{i}_odor_intensity' for i in SLo]
-        # self.k_S_oS, self.k_L_oS=[f'{i}_odor_spread' for i in SLo]
-        # self.k_f='food'
-        # self.k_fM=f'{self.k_f}_amount'
 
     # @property
     def food_on(self,w):
@@ -73,16 +60,16 @@ class EnvTab(GuiTab):
 
     @property
     def s(self):
-        return self.aux_dict['s']
+        return self.base_dict['s']
 
     # @property
     def get_drag_ps(self, scaled=False):
-        d=self.aux_dict
+        d=self.base_dict
         p1,p2= d['start_point'], d['end_point']
         return [self.scale_xy(p1), self.scale_xy(p2)] if scaled else [p1,p2]
 
     def set_drag_ps(self, p1=None,p2=None):
-        d=self.aux_dict
+        d=self.base_dict
         if p1 is not None :
             d['start_point']=p1
         if p2 is not None :
@@ -96,7 +83,7 @@ class EnvTab(GuiTab):
             c[n].update(w, conf[n] if n in conf.keys() else {})
         for n in ['source_groups', 'source_units', 'food_grid']:
             c[n].update(w, conf['food_params'][n])
-        self.aux_dict['env_db'] = self.set_env_db(env=conf)
+        self.base_dict['env_db'] = self.set_env_db(env=conf)
         w.write_event_value('RESET_ARENA', 'Draw the initial arena')
 
     def get(self, w, v, c, as_entry=False):
@@ -138,8 +125,8 @@ class EnvTab(GuiTab):
         c2 = Collapsible('Sources', True, l1)
         c.update(c2.get_subdicts())
         l2 = [c[n].get_layout() for n in ['arena', 'larva_groups', 'Sources', 'border_list', 'odorscape']]
-        l1 = SelectionList(tab=self, conftype='Env', actions=['load', 'save', 'delete'])
-        self.selectionlists = [l1]
+        l1 = SelectionList(tab=self, actions=['load', 'save', 'delete'])
+        self.selectionlists = {sl.conftype : sl for sl in [l1]}
         l = sg.Col([l1.l, *l2], **col_kws, size=col_size(0.25))
         return l, c, {}, {}
 
@@ -229,7 +216,7 @@ class EnvTab(GuiTab):
         l = sg.Col([[sg.Col(col1, **col_kws), sg.Col(col2, **col_kws)]], **col_kws, size=col_size(0.75))
 
         g = {g1.name: g1}
-        self.graph_list=g1
+        # self.graph_list=g1
         self.graph = g1.canvas_element
 
         d = {self.name: dic}
@@ -249,22 +236,22 @@ class EnvTab(GuiTab):
         S,L,B='SOURCE','LARVA', 'BORDER'
         gg=self.graph
         gg.bind('<Button-3>', '+RIGHT+')
-        dic = d[self.name]
+        dic = self.base_dict
         info = w["info"]
         if e == 'RESET_ARENA':
             self.reset_arena(v, w, c)
         elif e == 'NEW_ARENA':
             w['out'].update(value='New arena initialized. All items erased.')
             self.draw_arena(v, w, c)
-            self.aux_dict['env_db'] = self.set_env_db()
+            self.base_dict['env_db'] = self.set_env_db()
 
         if e == '-MOVE-':
             gg.Widget.config(cursor='fleur')
         elif not e.startswith('-GRAPH-'):
             gg.Widget.config(cursor='left_ptr')
-        db = self.aux_dict['env_db']
-        if e == self.graph_list.canvas_key:
-            x, y = v[self.graph_list.canvas_key]
+        db = self.base_dict['env_db']
+        if e == self.canvas_k:
+            x, y = v[self.canvas_k]
             if not dic['dragging']:
                 self.set_drag_ps(p1=(x, y))
                 dic['dragging'] = True
@@ -504,11 +491,11 @@ class EnvTab(GuiTab):
                 dif = (Y - X) / Y
                 arena = g.draw_rectangle((int(W * dif / 2), 0), (W - int(W * dif / 2), H), **kws)
                 s = H / Y
-        self.aux_dict['s']=s
-        self.aux_dict['arena']=arena
+        self.base_dict['s']=s
+        self.base_dict['arena']=arena
 
     def reset_arena(self, v, w, c):
-        db = copy.deepcopy(self.aux_dict['env_db'])
+        db = copy.deepcopy(self.base_dict['env_db'])
         self.draw_arena(v, w, c)
         for id, ps in db['s_u']['items'].items():
             f = self.draw_source(P0=self.scale_xy(ps['pos'], reverse=True), **ps)
@@ -527,7 +514,7 @@ class EnvTab(GuiTab):
                                     width=int(ps['width'] * self.s))
             db['b']['figs'][f] = id
         w['out'].update(value='Arena has been reset.')
-        self.aux_dict['env_db']=db
+        self.base_dict['env_db']=db
 
     def scale_xy(self, xy, reverse=False):
         if xy is None :
@@ -551,7 +538,7 @@ class EnvTab(GuiTab):
 
     def delete_prior(self, fig=None):
         if fig is None :
-            fig=self.aux_dict['prior_rect']
+            fig=self.base_dict['prior_rect']
         g = self.graph
         if fig is None :
             pass
@@ -652,7 +639,7 @@ class EnvTab(GuiTab):
         return env_db
 
     def aux_reset(self):
-        dic=self.aux_dict
+        dic=self.base_dict
         dic['dragging'], dic['current'] = False, {}
         dic['start_point'], dic['end_point'], dic['prior_rect'] = None, None, None
 

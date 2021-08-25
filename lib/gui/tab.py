@@ -31,16 +31,16 @@ class ProgressBarLayout :
 
 
 class SelectionList:
-    def __init__(self, tab, conftype, disp=None, actions=[], sublists={},idx=None, progress=False,
+    def __init__(self, tab, conftype=None, disp=None, actions=[], sublists={},idx=None, progress=False,
                  width=24,with_dict=False, **kwargs):
         self.with_dict = with_dict
         self.width = width
         self.tab = tab
-        self.conftype = conftype
+        self.conftype = conftype if conftype is not None else tab.conftype
         self.actions = actions
 
         if disp is None:
-            disps = [k for k, v in self.tab.gui.tab_dict.items() if v[1] == conftype]
+            disps = [k for k, v in self.tab.gui.tab_dict.items() if v[1] == self.conftype]
             if len(disps) == 1:
                 disp = disps[0]
             elif len(disps) > 1:
@@ -220,22 +220,59 @@ class SelectionList:
 
 
 class GuiTab:
-    def __init__(self, name, gui):
+    def __init__(self, name, gui, conftype=None):
         self.name = name
         self.gui = gui
-        self.selectionlists = []
-        self.graph_list=None
+        self.conftype = conftype
+        self.selectionlists = {}
+        # self.graph_list=None
 
     @property
-    def aux_dict(self):
-        return self.gui.dicts[self.name]
+    def graph_list(self):
+        gs = self.gui.graph_lists
+        n = self.name
+        if n in list(gs.keys()):
+            return gs[n]
+        else:
+            return None
+
+    @property
+    def canvas_k(self):
+        g=self.graph_list
+        return g.canvas_key if g is not None else None
+
+    @property
+    def graphlist_k(self):
+        g = self.graph_list
+        return g.list_key if g is not None else None
+
+    @property
+    def base_list(self):
+        return self.selectionlists[self.conftype] if self.conftype is not None else None
+
+    @property
+    def base_dict(self):
+        ds=self.gui.dicts
+        n=self.name
+        if n in list(ds.keys()) :
+            return ds[n]
+        else :
+            return None
+
+    def current_ID(self, v):
+        l=self.base_list
+        return v[l.k] if l is not None else None
+
+    def current_conf(self, v):
+        id=self.current_ID(v)
+        return loadConf(id, self.conftype) if id is not None else None
 
     def build(self):
         return None, {}, {}, {}
 
     def eval0(self, e, v):
-        for i in self.selectionlists:
-            i.eval(e, v)
+        for sl_name,sl in self.selectionlists.items():
+            sl.eval(e, v)
         w = self.gui.window
         c = self.gui.collapsibles
         g = self.gui.graph_lists
