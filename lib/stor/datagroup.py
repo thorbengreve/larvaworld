@@ -7,9 +7,11 @@ import numpy as np
 
 from lib.stor import paths as paths
 
+
 sys.path.insert(0, paths.get_parent_dir())
 
 from lib.conf.conf import loadConf, setDataGroup, deleteConf, saveConf
+import lib.aux.functions as fun
 
 
 class LarvaDataGroup:
@@ -70,3 +72,16 @@ class LarvaDataGroup:
 
     def get_path(self):
         return f'{paths.DataFolder}/{self.path}'
+
+    # def get_last_common(self, dirs, raw=True):
+    #     dirs = [fun.remove_prefix(dr, f'{self.raw_dir}/') for dr in dirs]
+    #     pass
+
+if __name__ == "__main__":
+    datagroup_id = 'SchleyerGroup'
+    datagroup = LarvaDataGroup(datagroup_id)
+    p=datagroup.path
+    pp = os.path.normpath(f'{paths.DataFolder}/{p}')
+    print(pp)
+    print(f'{paths.DataFolder}/{p}')
+    print(datagroup.get_path())

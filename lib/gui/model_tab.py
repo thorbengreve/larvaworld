@@ -1,17 +1,20 @@
 import copy
-import PySimpleGUI as sg
+import os
 
-from lib.gui.gui_lib import CollapsibleDict, Collapsible,CollapsibleTable, col_kws, col_size
+from lib.gui.gui_lib import CollapsibleDict, Collapsible, CollapsibleTable, GraphList, SelectionList
+from lib.gui.aux import col_size, col_kws, gui_col
 import lib.conf.dtype_dicts as dtypes
-from lib.gui.tab import GuiTab, SelectionList
-
+from lib.gui.tab import GuiTab
+from lib.stor import paths
 
 class ModelTab(GuiTab):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.fields=['physics', 'energetics', 'body', 'odor']
+        self.module_keys = list(dtypes.get_dict('modules').keys())
 
     def update(self, w, c, conf, id=None):
-        for n in ['physics', 'energetics', 'body', 'odor']:
+        for n in self.fields:
             c[n].update(w, conf[n])
         module_dict = conf['brain']['modules']
         for k, v in module_dict.items():
@@ -30,10 +33,10 @@ class ModelTab(GuiTab):
         c['Brain'].update(w, temp, use_prefix=False)
 
     def get(self, w, v, c, as_entry=True):
-        module_dict = dict(zip(dtypes.module_keys, [w[f'TOGGLE_{k.upper()}'].get_state() for k in dtypes.module_keys]))
+        module_dict = dict(zip(self.module_keys, [w[f'TOGGLE_{k.upper()}'].get_state() for k in self.module_keys]))
         m = {}
 
-        for n in ['physics', 'energetics', 'body', 'odor']:
+        for n in self.fields:
             m[n] = None if c[n].state is None else c[n].get_dict(v, w)
 
         b = {}
@@ -49,24 +52,31 @@ class ModelTab(GuiTab):
 
     def build(self):
         l0 = SelectionList(tab=self,actions=['load', 'save', 'delete'])
-        self.selectionlists = {sl.conftype : sl for sl in [l0]}
-
         c1 = [CollapsibleDict(n, False, default=True, **kwargs)
-              for n, kwargs in zip(['physics', 'energetics', 'body', 'odor'], [{}, {'toggle': True}, {}, {}])]
+              for n, kwargs in zip(self.fields, [{}, {'toggle': True}, {}, {}])]
         s1 = CollapsibleTable('odor_gains', False, headings=['id', 'mean', 'std'], dict={}, type_dict=dtypes.get_dict_dtypes('odor_gain'))
-        l1 = [i.get_layout() for i in c1 + [s1]]
         c2 = [CollapsibleDict(k.upper(), False, dict=dtypes.get_dict(k), type_dict=dtypes.get_dict_dtypes(k),
-                              toggle=True, disp_name=k.capitalize()) for k in dtypes.module_keys]
+                              toggle=True, disp_name=k.capitalize()) for k in self.module_keys]
         l2 = [i.get_layout() for i in c2]
-        b = Collapsible('Brain', True, l2)
+        b = Collapsible('Brain', False, l2)
 
-        l3=[sg.Col([b.get_layout()], **col_kws, size=col_size(0.25)),
-                                         sg.Col(l1, **col_kws, size=col_size(0.25))]
+        fdir=paths.ModelFigFolder
+        fig_dict= {f: f'{fdir}/{f}' for f in os.listdir(fdir)}
+        g1 = GraphList(self.name,list_header='Model', fig_dict=fig_dict, subsample=3, canvas_size=col_size(x_frac=0.6*0.9, y_frac=0.9),
+                       canvas_col_kws={**col_kws, 'size':col_size(0.6)})
+        g = {g1.name: g1}
+
+        l = [[
+            gui_col([l0, b, *c1, s1], 0.2),
+            gui_col([g1.canvas], 0.6),
+            gui_col([g1], 0.2)
+        ]]
+
         c = {}
         for s in c2 + c1 + [s1, b]:
             c.update(s.get_subdicts())
-        l = [[sg.Col([l0.l, l3], vertical_alignment='t')]]
-        return l, c, {}, {}
+
+        return l, c, g, {}
 
 
 if __name__ == "__main__":

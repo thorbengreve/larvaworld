@@ -2,8 +2,11 @@ import os
 
 
 def get_parent_dir():
-    p = os.path.dirname(os.path.abspath(__file__))
-    p = os.path.join(p, '../..')
+    p=os.path.abspath(__file__)
+    p = os.path.dirname(p)
+    p = os.path.dirname(p)
+    p = os.path.dirname(p)
+    # p = os.path.join(p, '../..')
     return p
 
 
@@ -28,7 +31,6 @@ ParShelve_path = f'{ConfFolder}/ParShelve'
 ParDict_path = f'{ConfFolder}/ParDict.csv'
 ParDf_path= f'{ConfFolder}/ParDf.csv'
 ParPdf_path= f'{ConfFolder}/ParPdf.pdf'
-# ParDict_path3 = f'{ConfFolder}/ParDict3.csv'
 UnitDict_path = f'{ConfFolder}/UnitDict.csv'
 LarvaShape_path = f'{ConfFolder}/larva_shape.csv'
 conf_paths = {
@@ -45,10 +47,19 @@ conf_paths = {
     'Life': f"{ConfFolder}/LifeConfs.txt",
 }
 
-VideoSlideFolder = f'{get_parent_dir()}/lib/gui/video_slides'
-IntroSlideFolder = f'{get_parent_dir()}/lib/gui/intro_slides'
-TutorialSlideFolder = f'{get_parent_dir()}/lib/gui/tutorial_slides'
-RoverSitterFigFolder = f'{get_parent_dir()}/lib/gui/roversVSsitters_exp_figures'
+Dtypes_path=f'{ConfFolder}/dtypes.txt'
+NullDicts_path=f'{ConfFolder}/null_dicts.txt'
+# Controls_path=f'{ConfFolder}/controls.txt'
+
+MediaFolder = f'{get_parent_dir()}/lib/media'
+VideoSlideFolder = f'{MediaFolder}/video_slides'
+IntroSlideFolder = f'{MediaFolder}/intro_slides'
+TutorialSlideFolder = f'{MediaFolder}/tutorial_slides'
+
+ModelFigFolder = f'{MediaFolder}/model_figures'
+ExpFigFolder = f'{MediaFolder}/exp_figures'
+RoverSitterFigFolder = f'{ExpFigFolder}/roversVSsitters'
+OdorPrefFigFolder = f'{ExpFigFolder}/odor_preference'
 
 new_format = False
 # new_format = True

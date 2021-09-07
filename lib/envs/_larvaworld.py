@@ -131,7 +131,9 @@ class LarvaWorld:
 
         self.end_condition_met = False
 
-    def toggle(self, name, value=None, show=False, minus=False, plus=False):
+    def toggle(self, name, value=None, show=False, minus=False, plus=False, disp=None):
+        if disp is None :
+            disp=name
 
         if name == 'snapshot #':
             import imageio
@@ -156,7 +158,7 @@ class LarvaWorld:
         if value is None:
             setattr(self, name, not getattr(self, name))
             value = 'ON' if getattr(self, name) else 'OFF'
-        self.screen_texts[name].text = f'{name} {value}'
+        self.screen_texts[name].text = f'{disp} {value}'
         self.screen_texts[name].end_time = pygame.time.get_ticks() + 2000
         self.screen_texts[name].start_time = pygame.time.get_ticks() + int(self.dt * 1000)
 
@@ -184,8 +186,8 @@ class LarvaWorld:
             default_larva_color = np.array([0, 0, 0])
         return tank_color, screen_color, scale_clock_color, default_larva_color
 
-    def create_arena(self, arena_xdim, arena_ydim, arena_shape):
-        X, Y = arena_xdim, arena_ydim
+    def create_arena(self, arena_dims, arena_shape):
+        X, Y = arena_dims
         self.arena_dims = np.array([X, Y])
         if X <= Y:
             self.screen_width = self.sim_screen_dim
@@ -387,15 +389,17 @@ class LarvaWorld:
             self.draw_arena(self._screen, background_motion)
 
         for o in self.get_food():
-            o.draw(self._screen, filled=True if o.amount > 0 else False)
-            o.id_box.draw(self._screen)
+            if o.visible :
+                o.draw(self._screen, filled=True if o.amount > 0 else False)
+                o.id_box.draw(self._screen)
 
         for g in self.get_flies():
-            g.draw(self._screen)
-            g.id_box.draw(self._screen)
+            if g.visible:
+                g.draw(self._screen)
+                g.id_box.draw(self._screen)
 
 
-        if self.trajectories:
+        if self.trails:
             ren.draw_trajectories(space_dims=self.space_dims, agents=self.get_flies(), screen=self._screen,
                                   decay_in_ticks=int(self.trajectory_dt / self.dt),
                                   traj_color=self.traj_color)
@@ -575,11 +579,6 @@ class LarvaWorld:
 
     def create_borders(self, lines):
         s = self.scaling_factor
-        X, Y = self.arena_dims
-        # if not from_screen:
-        #     T = [sigma, 0, 0, sigma, -sigma * X / 2, -sigma * Y / 2]
-        # else:
-        #     T = [sigma, 0, 0, sigma, 0, 0]
         T = [s, 0, 0, s, 0, 0]
         lines = [affine_transform(l, T) for l in lines]
         ps = [p.coords.xy for p in lines]
@@ -610,7 +609,8 @@ class LarvaWorld:
             agents = self.get_flies()
         elif class_name == 'Border':
             agents = self.borders
-        pars = list(dtypes.get_dict_dtypes('agent', class_name=class_name).keys())
+        pars = list(dtypes.get_dict_dtypes(class_name).keys())
+        # pars = list(dtypes.get_dict_dtypes('agent', class_name=class_name).keys())
         # pars = list(agent_dtypes[class_name].keys())
         data = {}
         for f in agents:
@@ -646,7 +646,7 @@ class LarvaWorld:
         texts = {}
         names = [
             'trajectory_dt',
-            'trajectories',
+            'trails',
             'focus_mode',
             'draw_centroid',
             'draw_head',

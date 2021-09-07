@@ -36,15 +36,13 @@ class LarvaDataset:
                            'Ncontour': Ncontour,
                            'sample_dataset': sample_dataset,
                            **par_conf,
-                           **arena_pars,
+                           'arena_pars': arena_pars,
                            **life_params
                            }
 
             # print(f'Initialized dataset {id} with new configuration')
         self.__dict__.update(self.config)
-        self.arena_pars = {'arena_xdim': self.arena_xdim,
-                           'arena_ydim': self.arena_ydim,
-                           'arena_shape': self.arena_shape}
+
         self.dt = 1 / self.fr
         self.configure_body()
         self.define_linear_metrics(self.config)
@@ -121,26 +119,27 @@ class LarvaDataset:
         if show_output:
             print(f'{len(agents)} agents dropped and {len(self.endpoint_data.index)} remaining.')
 
-    def drop_pars(self, pars=[], groups=[], is_last=True, show_output=True):
+    def drop_pars(self, pars=[], groups=None, is_last=True, show_output=True):
+        if groups is None:
+            groups = {n: False for n in
+                      ['midline', 'contour', 'stride', 'non_stride', 'stridechain', 'pause', 'Lturn', 'Rturn', 'turn',
+                       'unused']}
         if self.step_data is None:
             self.load()
         s = self.step_data
 
-        if 'midline' in groups:
+        if groups['midline']:
             pars += fun.flatten_list(self.points_xy)
-        if 'contour' in groups:
+        if groups['contour']:
             pars += fun.flatten_list(self.contour_xy)
         for c in ['stride', 'non_stride', 'stridechain', 'pause', 'Lturn', 'Rturn', 'turn']:
-            if c in groups:
+            if groups[c]:
                 pars += [f'{c}_start', f'{c}_stop', f'{c}_id', f'{c}_dur', f'{c}_length']
-        if 'unused' in groups:
+        if groups['unused']:
             pars += self.get_unused_pars()
-
         pars = fun.unique_list(pars)
-
         s.drop(columns=[p for p in pars if p in s.columns], inplace=True)
         self.set_data(step=s)
-        # self.set_step_data(s)
         if is_last:
             self.save()
             self.load()
@@ -180,13 +179,7 @@ class LarvaDataset:
 
     def save(self, step=True, end=True, food=False, table_entries=None):
         if self.save_data_flag == True:
-            # print('Saving data')
-            # self.build_dirs()
             if step:
-                # print(self.step_data['bend_velocity'])
-                # print(list(self.step_data.columns)[10:20])
-                # print(list(self.step_data.columns)[20:30])
-                # print(list(self.step_data.columns)[30:])
                 self.step_data.to_csv(self.dir_dict['step'], index=True, header=True)
             if end:
                 self.endpoint_data.to_csv(self.dir_dict['end'], index=True, header=True)
@@ -196,8 +189,8 @@ class LarvaDataset:
                 dir = self.dir_dict['table']
                 for name, table in table_entries.items():
                     table.to_csv(f'{dir}/{name}.csv', index=True, header=True)
-
             self.save_config()
+            print(f'Dataset {self.id} stored.')
 
     def save_tables(self, tables):
         for name, table in tables.items():
@@ -206,11 +199,12 @@ class LarvaDataset:
             if 'unique_id' in df.columns:
                 df.rename(columns={'unique_id': 'AgentID'}, inplace=True)
                 Nagents = len(df['AgentID'].unique().tolist())
-                Nrows = int(len(df.index) / Nagents)
-                df['Step'] = np.array([[i] * Nagents for i in range(Nrows)]).flatten()
-                df.set_index(['Step', 'AgentID'], inplace=True)
-                df.sort_index(level=['Step', 'AgentID'], inplace=True)
-            df.to_csv(path, index=True, header=True)
+                if Nagents>0 :
+                    Nrows = int(len(df.index) / Nagents)
+                    df['Step'] = np.array([[i] * Nagents for i in range(Nrows)]).flatten()
+                    df.set_index(['Step', 'AgentID'], inplace=True)
+                    df.sort_index(level=['Step', 'AgentID'], inplace=True)
+                df.to_csv(path, index=True, header=True)
 
     def save_config(self):
         try:
@@ -341,10 +335,9 @@ class LarvaDataset:
             if arena_pars is None:
                 arena_pars = self.arena_pars
             env_params = {'arena': arena_pars}
-        # arena_dims = [env_params['arena'][k] * 1 for k in ['arena_xdim', 'arena_ydim']]
-        arena_dims = [env_params['arena'][k] * 1000 for k in ['arena_xdim', 'arena_ydim']]
-        env_params['arena']['arena_xdim'] = arena_dims[0]
-        env_params['arena']['arena_ydim'] = arena_dims[1]
+        arena_dims = [k * 1000 for k in env_params['arena']['arena_dims']]
+        env_params['arena']['arena_dims'] = arena_dims
+
 
 
         if transposition is not None:
@@ -388,7 +381,6 @@ class LarvaDataset:
             'distro_dir': self.dir_dict['distro'],
             'dsp_dir': self.dir_dict['dispersion'],
         }
-
         process(**c, **kwargs)
         if is_last:
             self.save()
@@ -409,11 +401,7 @@ class LarvaDataset:
         if not hasattr(self, 'endpoint_data'):
             self.load(step=False)
         e=self.endpoint_data
-        # print(e)
-        # print(self.arena_pars)
-        # if arena_diameter_in_mm is None:
-        #     arena_diameter_in_mm = self.arena_xdim * 1000
-        r = 0.2 * self.arena_xdim
+        r = 0.2 * self.arena_pars['arena_dims'][0]
         p='x' if 'x' in e.keys() else nam.final('x')
         d = e[p]
         N = d.count()
@@ -561,7 +549,7 @@ class LarvaDataset:
             self.acceleration = nam.lin(self.acceleration)
 
     def enrich(self,preprocessing={},processing={},annotation={},enrich_aux={},
-               to_drop=[], show_output=False,is_last=True, **kwargs):
+               to_drop={}, show_output=False,is_last=True, **kwargs):
         print()
         print(f'--- Enriching dataset {self.id} with derived parameters ---')
         self.config['front_body_ratio'] = 0.5
@@ -569,11 +557,10 @@ class LarvaDataset:
         warnings.filterwarnings('ignore')
         c = {'show_output': show_output,
              'is_last': False}
-
         self.preprocess( **preprocessing,**c, **enrich_aux, **kwargs)
         self.process(**processing, **enrich_aux, **c, **kwargs)
         self.annotate(**annotation, **enrich_aux, **c, **kwargs)
-        self.drop_pars(groups=to_drop, **c)
+        self.drop_pars(**to_drop, **c)
         if is_last:
             self.save()
         return self

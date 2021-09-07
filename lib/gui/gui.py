@@ -1,12 +1,13 @@
 import PySimpleGUI as sg
 import matplotlib
 
+import lib.gui.aux
 from lib.gui.analysis_tab import AnalysisTab
 from lib.gui.batch_tab import BatchTab
 from lib.gui.env_tab import EnvTab
 from lib.gui.essay_tab import EssayTab
 from lib.gui.life_tab import LifeTab
-from lib.gui.preprocess_tab import PreprocessTab
+from lib.gui.import_tab import ImportTab
 from lib.gui.sim_tab import SimTab
 from lib.gui.tab import IntroTab, VideoTab, TutorialTab
 from lib.gui.model_tab import ModelTab
@@ -31,7 +32,7 @@ class LarvaworldGui:
             'essay': (EssayTab, 'Essay', 'essay_conf'),
             'batch-run': (BatchTab, 'Batch', 'batch_conf'),
             'analysis': (AnalysisTab, None, None),
-            'groups': (PreprocessTab, 'Group', None),
+            'import': (ImportTab, 'Group', None),
             'videos': (VideoTab, None, None),
             'settings': (SettingsTab, None, None)
         }
@@ -44,7 +45,7 @@ class LarvaworldGui:
         self.terminal = gui.gui_terminal()
         layout, self.collapsibles, self.graph_lists, self.dicts, self.tabs = self.build(tabs)
 
-        c = {'layout': layout, 'size': gui.window_size, 'location': (300, 100), **gui.w_kws}
+        c = {'layout': layout, 'size': lib.gui.aux.window_size, 'location': (300, 100), **lib.gui.aux.w_kws}
         self.window = sg.Window('Larvaworld gui', **c)
 
     def run(self):
@@ -91,11 +92,11 @@ class LarvaworldGui:
 
         l_tabs = sg.TabGroup([ls], key='ACTIVE_TAB', tab_location='topleft', selected_title_color='darkblue',
                              font=("Helvetica", 13, "normal"),
+                             # size=gui.col_size(y_frac=0.7),
                              title_color='grey', selected_background_color=None,
                              tab_background_color='lightgrey', background_color=None)
 
         l0 = [[sg.Pane([sg.vtop(l_tabs), sg.vbottom(self.terminal)], handle_size=30)]]
-        # l0 = [[sg.Pane([sg.Col([l_tabs]), sg.Col([[self.terminal]])], handle_size=30)]]
         return l0, cs, ds, gs, ts
 
     def get_vis_kwargs(self, v, **kwargs):

@@ -1181,7 +1181,6 @@ def unique_list(l):
 
 
 def agent_dict2list(dic, header='unique_id'):
-    # print(dic)
     l = []
     for id, pars in dic.items():
         pars[header] = id
@@ -1265,14 +1264,24 @@ def load_dicts(files=None, pref=None, suf=None, folder=None, extension='txt', us
     ds = []
     for f in files:
         n = f'{folder}/{f}' if folder is not None else f
-        if use_pickle :
-            with open(n, 'rb') as tfp:
-                d = pickle.load(tfp)
-        else :
-            with open(n) as tfp:
-                d = json.load(tfp)
+        d=load_dict(n, use_pickle=use_pickle)
+        # if use_pickle :
+        #     with open(n, 'rb') as tfp:
+        #         d = pickle.load(tfp)
+        # else :
+        #     with open(n) as tfp:
+        #         d = json.load(tfp)
         ds.append(d)
     return ds
+
+def load_dict(file, use_pickle=True) :
+    if use_pickle:
+        with open(file, 'rb') as tfp:
+            d = pickle.load(tfp)
+    else:
+        with open(file) as tfp:
+            d = json.load(tfp)
+    return d
 
 def save_dict(d, file, use_pickle=True) :
     if use_pickle :
@@ -1363,4 +1372,50 @@ def value_list(start=0.0,end=1.0, integer=False, steps=100, decimals=2, allow_No
     else :
         return a.tolist()
 
+def boolean_indexing(v, fillval=np.nan):
+    lens = np.array([len(item) for item in v])
+    mask = lens[:,None] > np.arange(lens.max())
+    out = np.full(mask.shape,fillval)
+    out[mask] = np.concatenate(v)
+    return out
 
+
+def get_pygame_key(key):
+    pygame_keys = {
+        'BackSpace': 'BACKSPACE',
+        'tab': 'TAB',
+        'del': 'DELETE',
+        'clear': 'CLEAR',
+        'Return': 'RETURN',
+        'Escape': 'ESCAPE',
+        'space': 'SPACE',
+        'exclam': 'EXCLAIM',
+        'quotedbl': 'QUOTEDBL',
+        '+': 'PLUS',
+        'comma': 'COMMA',
+        '-': 'MINUS',
+        'period': 'PERIOD',
+        'slash': 'SLASH',
+        'numbersign': 'HASH',
+        'Down:': 'DOWN',
+        'Up:': 'UP',
+        'Right:': 'RIGHT',
+        'Left:': 'LEFT',
+        'dollar': 'DOLLAR',
+        'ampersand': 'AMPERSAND',
+        'parenleft': 'LEFTPAREN',
+        'parenright': 'RIGHTPAREN',
+        'asterisk': 'ASTERISK',
+    }
+    return f'K_{pygame_keys[key]}' if key in list(pygame_keys.keys()) else f'K_{key}'
+
+def replace_in_dict(d0, replace_d, inverse=False) :
+    d = copy.deepcopy(d0)
+    if inverse :
+        replace_d={v0:k0 for k0,v0 in replace_d.items()}
+    for k,v in d.items():  # for each elem in the list datastreams
+        if type(v)==dict :
+            d[k]=replace_in_dict(v, replace_d, inverse=False)
+        elif v in list(replace_d.keys()):
+            d[k] = replace_d[v]
+    return d

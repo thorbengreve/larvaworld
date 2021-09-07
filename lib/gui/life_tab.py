@@ -1,10 +1,14 @@
 import PySimpleGUI as sg
+
+import lib.conf.conf
 import lib.conf.dtype_dicts as dtypes
+import lib.conf.init_dtypes
 from lib.anal.plotting import plot_debs
 
-from lib.gui.gui_lib import CollapsibleDict, col_kws, col_size, t12_kws, graphic_button, \
-    t18_kws, b_kws, t24_kws, Table, GraphList
-from lib.gui.tab import GuiTab, SelectionList
+from lib.gui.gui_lib import CollapsibleDict, Table, GraphList, SelectionList
+from lib.gui.aux import col_size, col_kws, t_kws, gui_col
+from lib.gui.buttons import graphic_button
+from lib.gui.tab import GuiTab
 from lib.model.DEB.deb import deb_default
 
 
@@ -72,37 +76,36 @@ class LifeTab(GuiTab):
         y = 0.5
         x1 = 0.2
         x2 = 0.2
-        l1_size = col_size(x_frac=x1, y_frac=y)
+        # l1_size = col_size(x_frac=x1, y_frac=y)
         l2_size = col_size(x_frac=x2, y_frac=1 - y)
         r1_size = col_size(x_frac=1 - x1, y_frac=y)
         r2_size = col_size(x_frac=(1 - x2)/2, y_frac=1 - y)
 
         sl0 = SelectionList(tab=self, actions=['load', 'save', 'delete'])
-        self.selectionlists = {sl.conftype : sl for sl in [sl0]}
 
-        sub = CollapsibleDict('substrate', False, default=True, header_dict=dtypes.substrate_dict,
+        sub = CollapsibleDict('substrate', False, default=True, header_dict=lib.conf.init_dtypes.substrate_dict,
                               header_value='standard')
 
-        l1 = sg.Col([[sg.Text('Epoch start (hours) : ', **t24_kws)],
+        l1 = sg.Col([[sg.T('Epoch start (hours) : ', **t_kws(24))],
                      [sg.Slider(range=(0, 150), default_value=0, key=self.S0,
                                 tick_interval=24, resolution=1,trough_color='green', **sl1_kws)],
-                     [sg.Text('Epoch stop (hours) : ', **t24_kws)],
+                     [sg.T('Epoch stop (hours) : ', **t_kws(24))],
                      [sg.Slider(range=(0, 150), default_value=0, key=self.S1,
                                 tick_interval=24, resolution=1,trough_color='red', **sl1_kws)],
                      ], size=r2_size, **col_kws)
 
-        l2 = sg.Col([[sg.Text('Food quality : ', **t24_kws)],
+        l2 = sg.Col([[sg.T('Food quality : ', **t_kws(24))],
               [sg.Slider(range=(0.0, 1.0), default_value=1.0, key=self.Sq,
                          tick_interval=0.25, resolution=0.01, **sl1_kws)],
-              [sg.Text('Starting age (hours post-hatch): ', **t24_kws)],
+              [sg.T('Starting age (hours post-hatch): ', **t_kws(24))],
               [sg.Slider(range=(0, 150), default_value=0, key=self.Sa,
                          tick_interval=24, resolution=1, **sl1_kws)],
               ], size=r2_size, **col_kws)
 
         l_tab = sg.Col([[
-            sg.Text(f'{ep.capitalize()}s (h)', **t18_kws),
-            graphic_button('add', f'ADD {ep}', tooltip=f'Add a new {ep}.'),
-            graphic_button('remove', f'REMOVE {ep}', tooltip=f'Remove an existing {ep}.'),
+            sg.T(f'{ep.capitalize()}s (h)', **t_kws(18)),
+            graphic_button('Button_Add', f'ADD {ep}', tooltip=f'Add a new {ep}.'),
+            graphic_button('Button_Remove', f'REMOVE {ep}', tooltip=f'Remove an existing {ep}.'),
         ],
             [Table(values=[], headings=[self.s0, self.s1, 'quality'], def_col_width=7,
                       max_col_width=24, background_color='lightblue',
@@ -115,20 +118,19 @@ class LifeTab(GuiTab):
                       alternating_row_color='lightyellow',
                       key=self.K
                       )],
-            # [sg.B('Remove', **b_kws, **pad2), sg.B('Add', **b_kws, **pad2)]
         ], size=l2_size, **col_kws)
 
         g1=GraphList(self.name, fig_dict={m : plot_debs for m in deb_modes}, default_values=['reserve'],
                  canvas_size=r1_size, list_header='DEB parameters', auto_eval=False)
 
-        l0 = sg.Col([
-            sl0.l,
-            sub.get_layout(),
-            [g1.get_layout()]
-        ], size=l1_size)
+
+        l0 = gui_col([sl0, sub, g1], x1,y)
+        l3 = gui_col([g1.canvas], 1-x1,y)
 
         l = [
-            [l0, g1.canvas],
+            [l0, l3],
+            # [l0, gui_col([g1.canvas], 1-x1,y)],
+            # [l0, gui_col([g1.canvas], 1-x1,y)],
             [l_tab, l1,l2],
         ]
 
