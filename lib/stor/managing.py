@@ -1,82 +1,114 @@
 import copy
+import time
 import warnings
 from itertools import product
 import pandas as pd
 
-from distutils.dir_util import copy_tree
 
-from lib.anal.plotting import comparative_analysis, plot_marked_turns, plot_marked_strides
-from lib.stor.building import build_Jovanic, build_Schleyer
+from lib.anal.plotting import comparative_analysis
+from lib.stor.building import build_Jovanic, build_Schleyer, build_Berni
 from lib.conf.conf import *
-from lib.stor.datagroup import LarvaDataGroup
 from lib.stor.larva_dataset import LarvaDataset
 import lib.aux.functions as fun
+import lib.aux.naming as nam
 
-
-def build_datasets(datagroup_id, raw_folders='each', folders=None, suffixes=None,
-                   ids=None, arena_pars=None, names=['raw'], group_ids=None, **kwargs):
+def build_dataset(datagroup_id,id,group_id, target_dir, source_dir=None,source_files=None, **kwargs):
     warnings.filterwarnings('ignore')
-    g = LarvaDataGroup(datagroup_id)
-    build_conf = g.tracker['filesystem']
-    # build_conf = g.get_conf()['build']
-    if raw_folders == 'all':
-        raw_folders = [np.sort(os.listdir(g.raw_dir))]
-        names = ['merged']
-    elif raw_folders == 'each':
-        raw_folders = [[f] for f in np.sort(os.listdir(g.raw_dir))]
-        names = [f'{f[0]}' for f in raw_folders]
+    g = loadConf(datagroup_id, 'Group')
+    build_conf = g['tracker']['filesystem']
+    data_conf = g['tracker']['resolution']
+    par_conf = g['parameterization']
+    arena_pars = g['tracker']['arena']
+
+
+    try:
+        shutil.rmtree(target_dir)
+    except:
+        pass
+
+    d = LarvaDataset(dir=target_dir, id=id, group_id=group_id, par_conf=par_conf, arena_pars=arena_pars,
+                     load_data=False, **data_conf)
+
+
+    if datagroup_id in [ 'Jovanic lab']:
+        step, end = build_Jovanic(d, build_conf, source_dir=source_dir, **kwargs)
+    elif datagroup_id in [ 'Berni lab']:
+        step, end = build_Berni(d, build_conf, source_files=source_files, **kwargs)
+    elif datagroup_id in ['Schleyer lab']:
+        step, end = build_Schleyer(d, build_conf, raw_folders=source_dir, **kwargs)
+    else:
+        raise ValueError(f'Configuration for {datagroup_id} is not supported for building new datasets')
+    if step is not None:
+        step.sort_index(level=['Step', 'AgentID'], inplace=True)
+        end.sort_index(inplace=True)
+        d.set_data(step=step, end=end)
+        d.save(food=False)
+        d.agent_ids = d.step_data.index.unique('AgentID').values
+        d.num_ticks = d.step_data.index.unique('Step').size
+        d.starting_tick = d.step_data.index.unique('Step')[0]
+        print(f'--- Dataset {d.id} created with {len(d.agent_ids)} larvae! ---')
+    else:
+        print(f'--- Failed to create dataset {d.id}! ---')
+        d.delete()
+    return d
+
+
+def build_datasets_old(datagroup_id, raw_folders, folders=None, suffixes=None,
+                       ids=None, names=['raw'], group_ids=None, **kwargs):
+    warnings.filterwarnings('ignore')
+    g = loadConf(datagroup_id, 'Group')
+    build_conf = g['tracker']['filesystem']
+    group_dir=f'{paths.DataFolder}/{g["path"]}'
+    raw_dir=f'{group_dir}/raw'
 
     ds = get_datasets(datagroup_id=datagroup_id, last_common='processed', names=names,
-                      folders=folders, suffixes=suffixes, mode='initialize', ids=ids, arena_pars=arena_pars)
-    # print()
-    # print(f'------ Building {len(ds)} datasets ------')
-    # print()
+                      folders=folders, suffixes=suffixes, mode='initialize', ids=ids)
     if group_ids in [None, '']:
-        group_ids =[d.id for d in ds]
-    elif type(group_ids)==str:
-        group_ids=[group_ids]*len(ds)
-    elif len(group_ids)!=len(ds) :
-        raise ValueError (f'Number of datasets ({len(ds)}) does not match number of provided group-IDs ({len(group_ids)})')
+        group_ids = [d.id for d in ds]
+    elif type(group_ids) == str:
+        group_ids = [group_ids] * len(ds)
+    elif len(group_ids) != len(ds):
+        raise ValueError(
+            f'Number of datasets ({len(ds)}) does not match number of provided group-IDs ({len(group_ids)})')
     for d, raw, group_id in zip(ds, raw_folders, group_ids):
-        if datagroup_id in ['JovanicGroup', 'JovanicFormat', 'Jovanic lab']:
-            step, end = build_Jovanic(d, build_conf, source_dir=f'{g.raw_dir}/{raw}',**kwargs)
-        elif datagroup_id in ['SchleyerGroup', 'SchleyerFormat', 'Schleyer lab']:
+        if datagroup_id in [ 'Jovanic lab']:
+            step, end = build_Jovanic(d, build_conf, source_dir=f'{raw_dir}/{raw}', **kwargs)
+        elif datagroup_id in [ 'Berni lab']:
+            step, end = build_Berni(d, build_conf, source_dir=f'{raw_dir}/{raw}', **kwargs)
+        elif datagroup_id in ['Schleyer lab']:
+
             if type(raw) == str:
-                temp = [f'{g.raw_dir}/{raw}']
+                temp = [f'{raw_dir}/{raw}']
             elif type(raw) == list:
-                temp = [f'{g.raw_dir}/{r}' for r in raw]
-            step, end = build_Schleyer(d, build_conf, raw_folders=temp,**kwargs)
+                temp = [f'{raw_dir}/{r}' for r in raw]
+            step, end = build_Schleyer(d, build_conf, raw_folders=temp, **kwargs)
         else:
             raise ValueError(f'Configuration for {datagroup_id} is not supported for building new datasets')
-        if step is not None :
+        if step is not None:
             step.sort_index(level=['Step', 'AgentID'], inplace=True)
             end.sort_index(inplace=True)
             d.set_data(step=step, end=end)
-            d.config['group_id']=group_id
+            d.config['group_id'] = group_id
             d.save(food=False)
             d.agent_ids = d.step_data.index.unique('AgentID').values
             d.num_ticks = d.step_data.index.unique('Step').size
             d.starting_tick = d.step_data.index.unique('Step')[0]
             print(f'--- Dataset {d.id} created with {len(d.agent_ids)} larvae! ---')
-        else :
+        else:
             print(f'--- Failed to create dataset {d.id}! ---')
-            # ds.remove(d)
             d.delete()
-            d=None
-    # print()
-    # print(f'------ {len(ds)} datasets built------')
-    # print()
     return ds
 
 
 def get_datasets(datagroup_id, names, last_common='processed', folders=None, suffixes=None,
-                 mode='load', load_data=True, ids=None, arena_pars=None, **kwargs):
-    datagroup = LarvaDataGroup(datagroup_id)
-    data_conf = datagroup.tracker['resolution']
-    # data_conf = datagroup.get_conf()['data']
-    par_conf = datagroup.parameterization
-    # par_conf = datagroup.get_par_conf()
-    last_common = f'{datagroup.get_path()}/{last_common}'
+                 mode='load', load_data=True, ids=None, **kwargs):
+    g = loadConf(datagroup_id, 'Group')
+    data_conf = g['tracker']['resolution']
+    par_conf = g['parameterization']
+    arena_pars = g['tracker']['arena']
+    group_dir = f'{paths.DataFolder}/{g["path"]}'
+
+    last_common = f'{group_dir}/{last_common}'
     if folders is None:
         new_ids = ['']
         folders = [last_common]
@@ -101,28 +133,21 @@ def get_datasets(datagroup_id, names, last_common='processed', folders=None, suf
                 shutil.rmtree(dir)
             except:
                 pass
-            if arena_pars is None:
-                arena_pars = datagroup.tracker['arena']
-                # arena_pars = datagroup.arena_pars
+
             d = LarvaDataset(dir=dir, id=id, par_conf=par_conf, arena_pars=arena_pars,
                              load_data=False, **data_conf)
         ds.append(d)
     return ds
 
 
-def enrich_datasets(datagroup_id, datasets=None, names=None, keep_raw=False, enrich_conf=None, **kwargs):
+def enrich_datasets(datagroup_id, datasets=None, names=None, enrich_conf=None, **kwargs):
     warnings.filterwarnings('ignore')
-    if datasets is None and names is not None :
+
+    if datasets is None and names is not None:
         datasets = get_datasets(datagroup_id, last_common='processed', names=names, mode='load', **kwargs)
-    if keep_raw:
-        raw_names = [f'raw_{n}' for n in names]
-        raw_ds = get_datasets(datagroup_id, last_common='processed', names=raw_names, mode='initialize', **kwargs)
-        for raw, new in zip(raw_ds, datasets):
-            copy_tree(new.dir, raw.dir)
     if enrich_conf is None:
-        # print('ffffff')
-        enrich_conf = LarvaDataGroup(datagroup_id).enrichment
-        # enrich_conf = LarvaDataGroup(datagroup_id).get_conf()['enrich']
+        g = loadConf(datagroup_id, 'Group')
+        enrich_conf = g['enrichment']
     print()
     print(f'------ Enriching {len(datasets)} datasets ------')
     print()
@@ -133,17 +158,11 @@ def enrich_datasets(datagroup_id, datasets=None, names=None, keep_raw=False, enr
     return ds
 
 
-def analyse_datasets(datagroup_id, save_to=None, sample_individuals=False, **kwargs):
+def analyse_datasets(datagroup_id, save_to=None, **kwargs):
     ds = get_datasets(datagroup_id=datagroup_id, **kwargs)
     if save_to is None and len(ds) > 1:
-        save_to = LarvaDataGroup(datagroup_id).plot_dir
-    if sample_individuals:
-        for d in ds:
-            plot_marked_strides(datasets=[d], agent_idx=0, slice=[0, 180])
-            try:
-                plot_marked_turns(dataset=d, agent_ids=d.agent_ids[:1])
-            except:
-                pass
+        g = loadConf(datagroup_id, 'Group')
+        save_to = f'{paths.DataFolder}/{g["path"]}/plots'
     fig_dict = comparative_analysis(datasets=ds, labels=[d.id for d in ds], save_to=save_to)
     return fig_dict
 
@@ -152,7 +171,8 @@ def visualize_datasets(datagroup_id, save_to=None, save_as=None, vis_kwargs={}, 
     warnings.filterwarnings('ignore')
     ds = get_datasets(datagroup_id=datagroup_id, **kwargs)
     if save_to is None and len(ds) > 1:
-        save_to = LarvaDataGroup(datagroup_id).vis_dir
+        g = loadConf(datagroup_id, 'Group')
+        save_to = f'{paths.DataFolder}/{g["path"]}/visuals'
     if save_as is None:
         save_as = [d.id for d in ds]
     for d, n in zip(ds, save_as):
@@ -160,33 +180,32 @@ def visualize_datasets(datagroup_id, save_to=None, save_as=None, vis_kwargs={}, 
         d.visualize(save_to=save_to, vis_kwargs=vis_kwargs, **replay_kwargs)
 
 
-def compute_PIs(datagroup_id=None, save_to=None,ds=None,save_as='PIs.csv', **kwargs):
-    # filename = 'PIs.csv'
-    if ds is None :
-        ds = get_datasets(datagroup_id=datagroup_id, **kwargs)
-    ids = [d.id for d in ds]
-    if save_to is None and len(ds) > 1 and datagroup_id is not None:
-        save_to = f'{LarvaDataGroup(datagroup_id).plot_dir}/PIs'
-    if not os.path.exists(save_to):
-        os.makedirs(save_to)
-    PIs = []
-    Ns = []
-    for j, d in enumerate(ds):
-        PI, N = d.compute_preference_index(return_num=True)
-        PIs.append(PI)
-        Ns.append(N)
-    df = pd.DataFrame({'PI': PIs, 'N': Ns}, index=ids)
-    df.to_csv(f'{save_to}/{save_as}', header=True, index=True)
-    print(f'PIs saved as {save_as}')
-    print(df)
+# def compute_PIs(datagroup_id=None, save_to=None, ds=None, save_as='PIs.csv', **kwargs):
+#     if ds is None:
+#         ds = get_datasets(datagroup_id=datagroup_id, **kwargs)
+#     ids = [d.id for d in ds]
+#     if save_to is None and len(ds) > 1 and datagroup_id is not None:
+#         g = loadConf(datagroup_id, 'Group')
+#         save_to = f'{paths.DataFolder}/{g["path"]}/plots/PIs'
+#     if not os.path.exists(save_to):
+#         os.makedirs(save_to)
+#     PIs = []
+#     Ns = []
+#     for j, d in enumerate(ds):
+#         PI, N = d.compute_preference_index(return_num=True)
+#         PIs.append(PI)
+#         Ns.append(N)
+#     df = pd.DataFrame({'PI': PIs, 'N': Ns}, index=ids)
+#     df.to_csv(f'{save_to}/{save_as}', header=True, index=True)
+#     print(f'PIs saved as {save_as}')
+#     print(df)
 
 
-def detect_dataset(datagroup_id=None, folder_path=None,raw=True, **kwargs):
-    # print(datagroup_id, folder_path, raw)
-    dic={}
+def detect_dataset(datagroup_id=None, folder_path=None, raw=True, **kwargs):
+    dic = {}
     if folder_path in ['', None]:
         return dic
-    if raw :
+    if raw:
         conf = loadConf(datagroup_id, 'Group')['tracker']['filesystem']
         if 'detect' in conf.keys():
             d = conf['detect']
@@ -198,18 +217,17 @@ def detect_dataset(datagroup_id=None, folder_path=None,raw=True, **kwargs):
             if dFp is not None:
                 if fn.startswith(dFp):
                     dic[fn] = folder_path
-                    # ids, dirs = [fn], [folder_path]
                 else:
                     ids, dirs = detect_dataset_in_subdirs(datagroup_id, folder_path, fn, **kwargs)
-                    for id, dr in zip(ids,dirs) :
-                        dic[id]=dr
+                    for id, dr in zip(ids, dirs):
+                        dic[id] = dr
             elif dFs is not None:
                 if fn.startswith(dFs):
                     dic[fn] = folder_path
                 else:
                     ids, dirs = detect_dataset_in_subdirs(datagroup_id, folder_path, fn, **kwargs)
-                    for id, dr in zip(ids,dirs) :
-                        dic[id]=dr
+                    for id, dr in zip(ids, dirs):
+                        dic[id] = dr
             elif dfp is not None:
                 fs = os.listdir(folder_path)
                 ids, dirs = [f.split(df_)[1:][0] for f in fs if f.startswith(dfp)], [folder_path]
@@ -217,155 +235,102 @@ def detect_dataset(datagroup_id=None, folder_path=None,raw=True, **kwargs):
                     dic[id] = dr
             elif dfs is not None:
                 fs = os.listdir(folder_path)
-                ids, dirs = [f.split(df_)[:-1][0] for f in fs if f.endswith(dfs)], [folder_path]
-                for id, dr in zip(ids, dirs):
-                    dic[id] = dr
+                ids = [f.split(df_)[:-1][0] for f in fs if f.endswith(dfs)]
+                for id in ids:
+                    dic[id] = folder_path
+            elif df_ is not None:
+                fs = os.listdir(folder_path)
+                ids = fun.unique_list([f.split(df_)[0] for f in fs if df_ in f])
+                for id in ids:
+                    dic[id] = folder_path
         return dic
-    else :
-        # ids, dds = [], []
+    else:
         if os.path.exists(f'{folder_path}/data'):
             dd = LarvaDataset(dir=folder_path)
-            dic[dd.id]=dd
-            # ids, dds = [dd.id], [dd]
+            dic[dd.id] = dd
         else:
             for ddr in [x[0] for x in os.walk(folder_path)]:
                 if os.path.exists(f'{ddr}/data'):
                     dd = LarvaDataset(dir=ddr)
-                    dic[dd.id]=dd
+                    dic[dd.id] = dd
         return dic
 
-def detect_dataset_in_subdirs(datagroup_id, folder_path, last_dir, full_ID=False) :
-    fn=last_dir
+
+def detect_dataset_in_subdirs(datagroup_id, folder_path, last_dir, full_ID=False):
+    fn = last_dir
     ids, dirs = [], []
-    if os.path.isdir(folder_path) :
+    if os.path.isdir(folder_path):
         fs = os.listdir(folder_path)
         for f in fs:
             dic = detect_dataset(datagroup_id, f'{folder_path}/{f}', full_ID=full_ID, raw=True)
             # id, dir = detect_dataset(datagroup_id, f'{folder_path}/{f}', full_ID=full_ID)
             for id, dr in dic.items():
-                if full_ID :
+                if full_ID:
                     ids += [f'{fn}/{id0}' for id0 in id]
-                else :
+                else:
                     ids.append(id)
                 dirs.append(dr)
     return ids, dirs
 
-# def merge_datasets(datasets, id, dir) :
-#     d0=LarvaDataset(dir, id=id)
-#     N=sum([d.Nagents for d in datasets])
-#     s0,e0=[], []
-#     for i, d in enumerate(datasets) :
-#         sigma = copy.deepcopy(d.step)
-#         e = copy.deepcopy(d.end)
-#         sigma.index['AgentID']= f'D{i}_' + sigma.index['AgentID'].astype('str')
-#         e.index['AgentID']= f'D{i}_' + e.index['AgentID'].astype('str')
-#         # e = copy.deepcopy(d.end)
-#         s0.append(sigma)
-#         e0.append(e)
-#     s0=
-#
-#     dd.config=datasets[0].config
-# k=get_datasets(datagroup_id='JovanicGroup', last_common='processed/AttP2@UAS_TNT', names = ['enriched_dataset'],
-#                 folders=['Fed', 'ProteinDeprived', 'Starved'], suffixes=None, load_data=True)
 
-# ds = get_datasets(datagroup_id='SimGroup', last_common='single_runs', names=['dish', 'chemorbit'],
-#                   folders=['dish', 'chemorbit'], suffixes=[1, 2, 3, 4], load_data=True)
-
-# raw_ds = get_datasets(datagroup_id='TestGroup', last_common='processed', names=['raw_dish'],
-#                       folders=None, suffixes=[0, 1, 2], mode='initialize')
-
-# ds = get_datasets(datagroup_id='TestGroup', last_common='processed', names=['enriched_dish'],
-#                   folders=None, suffixes=[0,1,2], mode='create', load_data=True)
-#
-# for raw, new in zip(raw_ds, ds) :
-#     copy_tree(raw.dir, new.dir)
-# ds=[d.enrich() for d in ds]
-# cs=['Fed', 'Starved']
-# k=build_datasets('JovanicGroup', names=['raw' for c in cs], raw_folders=[f'raw/AttP240@UAS_TNT/{c}' for c in cs],
-#                  folders=[f'AttP240@UAS_TNT/{c}' for c in cs],
-#                suffixes=None, max_Nagents=None, min_Nids=200)
-
-# k=build_datasets('TestGroup', names=['raw_dish'], raw_folders=[['dish_0'],['dish_1'], ['dish_2']],
-#                  folders=None, suffixes=[0,1,2], ids=None)
-
-# k=build_datasets('TestGroup', names=['raw_merged'], raw_folders=[['dish_0','dish_1','dish_2']],
-#                  folders=None, ids=None)
-
-if __name__ == "__main__":
-    # folder_path = '/home/panos/nawrot_larvaworld/larvaworld/data/SchleyerGroup/raw'
-    folder_path = '/home/panos/nawrot_larvaworld/larvaworld/data/SchleyerGroup/processed/odor_conc'
-    # folder_path = '/home/panos/nawrot_larvaworld/larvaworld/data/SchleyerGroup/processed/Ntrials'
-    # folder_path = '/home/panos/nawrot_larvaworld/larvaworld/data/SchleyerGroup/raw/FRUconc/High'
-    # folder_path = '/home/panos/nawrot_larvaworld/larvaworld/data/SchleyerGroup/processed/FRUconc/High/AM+/High_AM_0'
-    # folder_path='/home/panos/nawrot_larvaworld/larvaworld/data/SchleyerGroup/processed/test/high_AM_160sec'
-    dic=detect_dataset(folder_path = folder_path, raw=False)
-    ds = list(dic.values())
-    # d = LarvaDataset(dir=folder_path)
-    # ids=detect_dataset(datagroup_id='SchleyerGroup', folder_path='/home/panos/nawrot_larvaworld/larvaworld/data/SchleyerGroup/raw/FRUconc/High/box1-2016-05-23_12_41_17')
-    # ids, dirs = detect_dataset(datagroup_id='SchleyerGroup', folder_path=folder_path, full_ID=True)
-    # print(os.listdir(folder_path))
-    # print(list(dic.keys()))
-    # ds0=[]
-    # for ii in ['AM+', 'EM+'] :
-    #     folder_path = f'/home/panos/nawrot_larvaworld/larvaworld/data/SchleyerGroup/processed/FRUconc/Low/{ii}'
-    #     dic=detect_dataset(folder_path = folder_path, raw=False)
-    #     ds = list(dic.values())
-    #     ds0.append(ds)
-    # ds0=fun.flatten_list(ds0)
+if __name__ == '__main__':
+    # pref = '/home/panos/nawrot_larvaworld/larvaworld/data/JovanicGroup/raw/3_conditions/AttP240@UAS_TNT/Starved'
+    # x_contour_file = f'{pref}_x_contour.txt'
+    # y_contour_file = f'{pref}_y_contour.txt'
+    # xcs = pd.read_csv(x_contour_file, header=None, sep='\t')
+    # ycs = pd.read_csv(y_contour_file, header=None, sep='\t')
+    # xcs, ycs = fun.convex_hull(xs=xcs.values, ys=ycs.values, N=30)
     #
-    from lib.anal.plotting import boxplot_PI
-    boxplot_PI(datasets=ds, return_fig=True, show=True,
-               # coupled_labels=True
-               # coupled_labels=['Low', 'Medium', 'High']
-               # coupled_group_ids={
-               #     'Low' : ['Low_AM', 'Low_EM'],
-               #     'Medium' : ['Medium_AM', 'Medium_EM'],
-               #     'High' : ['High_AM', 'High_EM'],
-               #                    },
-               # common_ids=['AM', 'EM']
-               )
+    # contour_xy = nam.xy(nam.contour(30))
+    # xc_pars = [x for x, y in contour_xy]
+    # yc_pars = [y for x, y in contour_xy]
+    # xcs = pd.DataFrame(xcs, columns=xc_pars, index=None)
+    # ycs = pd.DataFrame(ycs, columns=yc_pars, index=None)
 
-    # from lib.anal.plotting import plot_endpoint_params
-    # plot_endpoint_params(datasets=ds, mode='basic', show=True)
-    # raise
-    # print()
-    # print(dirs)
-    # dr = '/home/panos/nawrot_larvaworld/larvaworld/data/SchleyerGroup/processed/FRUconc/High/AM+/box1-2016-05-23_12_41_17'
-    # d = LarvaDataset(dir=dr)
-    # par_shorts =['l', 'fsv', 'sv_mu', 'sstr_d_mu',
-    #  'cum_t', 'str_tr', 'pau_tr', 'tor',
-    #  'tor5_mu', 'tor20_mu', 'dsp_0_40_max', 'dsp_0_40_fin',
-    #  'b_mu', 'bv_mu', 'Ltur_tr', 'Rtur_tr']
-    # from lib.conf.par import getPar
-    # pars, = getPar(par_shorts, to_return=['d'])
-    # print(pars)
-    # d = ds[0]
-    # pars = [p for p in pars if all([p in d.endpoint_data.columns for d in [d]])]
-    # print(pars)
-    # symbols, exp_symbols, xlabels, xlims, disps = getPar(par_shorts, to_return=['s', 's', 'l', 'lim', 'd'])
-    # print(pars)
-    # d=ds[0]
-    # s,e=d.step_data, d.endpoint_data
-    # print(e.columns)
-    # print(e['scaled_stride_dst_mean'])
-    # print(e['length_mean'].mean())
-    import matplotlib.pyplot as plt
-    # plt.hist(e['length'])
-    # plt.show()
-    # print(s.columns)
-    # f=d.config['filtered_at']
-    # print(f in [np.nan, None, 'None'])
-    # print(np.isnan(f))
-    # k=os.path.exists(d.dir_dict['conf'])
-    # print(k)
-    #
-    # with open(d.dir_dict['conf']) as tfp:
-    #     c = json.load(tfp)
-    # # print(os.listdir(d.data_dir))
-    # print(s['point5_x'].dropna().max())
-    # print(s['point5_x'].dropna().min())
-    # print(s['point5_y'].dropna().max())
-    # print(s['point5_y'].dropna().min())
-    # print(d.config)
-    # d.visualize()
+    # yys=vertices[:,:][1]
 
+    # import lib.conf.dtype_dicts as dtypes
+
+    # vis_kwargs = dtypes.get_dict('visualization', mode='video', video_speed=60)
+    # dr='/home/panos/nawrot_larvaworld/larvaworld/data/JovanicGroup/processed/3_conditions/AttP240@UAS_TNT/Starved'
+    # d = LarvaDataset(dr)
+    # # d.visualize(vis_kwargs=vis_kwargs)
+    # s,e=d.step_data,d.endpoint_data
+    ss={'a' :[2], 'b':[3]}
+    s=pd.DataFrame.from_dict(ss)
+    # bar = pd.DataFrame(np.random.randn(10, 4))
+    # s0=time.time()
+    store = pd.HDFStore('test.h5')
+    store['foo'] = s  # write to HDF5
+    # bar = store['foo']  # retrieve
+    store.close()
+#     s1=time.time()
+#
+#     store = pd.HDFStore('test.h5')
+#     bar = store['foo']
+#     b1=bar['head_x'].xs('Larva_137', level='AgentID', drop_level=True).values[3390]
+#     print()
+#     store.close()
+#     s2 = time.time()
+#
+#     s.to_csv('test.csv', index=True, header=True)
+#     s3 = time.time()
+#     bar2 = pd.read_csv('test.csv', index_col=['Step', 'AgentID'])
+#     b2=bar2['head_x'].xs('Larva_137', level='AgentID', drop_level=True).values[3390]
+#     print()
+#     s4 = time.time()
+#     # a=s.xs(d.agent_ids[0], level='AgentID', drop_level=True)
+#     # print(a[list(d.contour_xy[0])])
+#     # print(a[list(d.contour_xy[1])])
+#     # print(s['point3_x'].min(), s['point3_x'].max())
+#     print(s1-s0, s2-s1)
+#     print(s3-s2, s4-s3)
+#     print(s2-s0, s4-s2)
+#     print(np.isnan(b1))
+#     print(np.isnan(b2))
+#     print(type(b1), type(b2))
+#     # print(d.config)
+# #     # print(s['head_x'].min(), s['head_x'].max())
+# #     # print(s['head_y'].min(), s['head_y'].max())
+# #     # print(d.config)
+# #     # print(d.config['point'])

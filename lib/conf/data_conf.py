@@ -99,19 +99,14 @@ Schleyer_raw_cols = ['Step'] + \
 Sims_raw_cols = ['Step'] + nam.xy('centroid')
 
 SchleyerEnrichConf = {
-    'preprocessing': {
-        'rescale_by': 1.0,
-        'drop_collisions': True,
-        'interpolate_nans': False,
-        'filter_f': 2.0
-    },
+    'preprocessing': dtypes.get_dict('preprocessing', filter_f=2.0, drop_collisions=True),
     'processing': {'types': {'angular': True, 'spatial': True, 'source': False, 'dispersion': True, 'tortuosity': True,
-                             'PI': True},
-                   'dsp_starts': [0, 20], 'dsp_stops': [40, 80, 120],
+                             'PI': False},
+                   'dsp_starts': [0, 20], 'dsp_stops': [40, 120],
                    'tor_durs': [2, 5, 10, 20]},
     'annotation': {'bouts': {'stride': True, 'pause': True, 'turn': True}, 'track_point': None,
                    'track_pars': None, 'chunk_pars': None,
-                   'vel_par': None, 'ang_vel_par': None, 'bend_vel_par': None, 'min_ang': 5.0,
+                   'vel_par': None, 'ang_vel_par': None, 'bend_vel_par': None, 'min_ang': 30.0,'min_ang_vel': 0.0,
                    'non_chunks': False},
     'enrich_aux': {'recompute': False,
                    'mode': 'minimal',
@@ -146,28 +141,48 @@ SchleyerGroup = {
 
 JovanicDataConf = {'fr': 11.27,
                    'Npoints': 11,
-                   'Ncontour': 0}
+                   'Ncontour': 10}
 
 JovanicEnrichConf = {
-    'preprocessing': {
-        'rescale_by': 1.0,
-        'drop_collisions': False,
-        'interpolate_nans': False,
-        'filter_f': 2.0
-    },
-    'processing': {'types': {'angular': True, 'spatial': True, 'source': False, 'dispersion': True, 'tortuosity': True,
-                             'PI': False},
-                   'dsp_starts': [0, 20], 'dsp_stops': [40, 80, 120],
-                   'tor_durs': [2, 5, 10, 20]},
-    'annotation': {'bouts': {'stride': True, 'pause': True, 'turn': True}, 'track_point': None,
+    'preprocessing': dtypes.get_dict('preprocessing', filter_f=2.0, transposition='arena'),
+    'processing': {
+        'types': {'angular': True, 'spatial': True, 'source': False, 'dispersion': False, 'tortuosity': False,
+                  'PI': False},
+        'dsp_starts': [0, 20], 'dsp_stops': [40, 120],
+        'tor_durs': [2, 5, 10, 20]},
+    'annotation': {'bouts': {'stride': False, 'pause': False, 'turn': False}, 'track_point': None,
                    'track_pars': None, 'chunk_pars': None,
-                   'vel_par': None, 'ang_vel_par': None, 'bend_vel_par': None, 'min_ang': 5.0,
+                   'vel_par': None, 'ang_vel_par': None, 'bend_vel_par': None, 'min_ang': 30.0,'min_ang_vel': 0.0,
                    'non_chunks': False},
     'enrich_aux': {'recompute': False,
                    'mode': 'minimal',
                    'source': None,
                    },
-    'to_drop': dtypes.get_dict('to_drop'),
+    'to_drop': dtypes.get_dict('to_drop', groups={**{n: True for n in
+                                                     ['stride', 'non_stride', 'stridechain', 'pause', 'Lturn',
+                                                      'Rturn', 'turn', 'unused']},
+                                                  **{'midline': False, 'contour': False}})
+}
+
+BerniEnrichConf = {
+    'preprocessing': dtypes.get_dict('preprocessing', filter_f=0.1, transposition='arena'),
+    'processing': {
+        'types': {'angular': False, 'spatial': False, 'source': False, 'dispersion': False, 'tortuosity': False,
+                  'PI': False},
+        'dsp_starts': [0, 20], 'dsp_stops': [40, 120],
+        'tor_durs': [2, 5, 10, 20]},
+    'annotation': {'bouts': {'stride': False, 'pause': False, 'turn': False}, 'track_point': None,
+                   'track_pars': None, 'chunk_pars': None,
+                   'vel_par': None, 'ang_vel_par': None, 'bend_vel_par': None, 'min_ang': None,'min_ang_vel': None,
+                   'non_chunks': False},
+    'enrich_aux': {'recompute': False,
+                   'mode': 'minimal',
+                   'source': None,
+                   },
+    'to_drop': dtypes.get_dict('to_drop', groups={**{n: True for n in
+                                                     ['stride', 'non_stride', 'stridechain', 'pause', 'Lturn',
+                                                      'Rturn', 'turn', 'unused']},
+                                                  **{'midline': False, 'contour': False}})
 }
 
 JovanicConf = {'id': 'JovanicConf',
@@ -231,7 +246,7 @@ SchleyerFormat = {
                          'front_vector': (1, 2),
                          'rear_vector': (7, 11),
                          'front_body_ratio': 0.5,
-                         'point_idx': None,
+                         'point_idx': -1,
                          'use_component_vel': False,
                          'scaled_vel_threshold': 0.2},
     'enrichment': SchleyerEnrichConf,
@@ -243,27 +258,57 @@ JovanicFormat = {
     'path': 'JovanicGroup',
     'tracker': {
         'resolution': {'fr': 11.27,
-                   'Npoints': 11,
-                   'Ncontour': 0},
+                       'Npoints': 11,
+                       'Ncontour': 30},
 
         'filesystem': {
             'read_sequence': None,
             'read_metadata': False,
             'detect': {
-        'folder': {'pref': None, 'suf': None},
-        'file': {'pref': None, 'suf': 'larvaid.txt', 'sep': '_'}
-        }
+                'folder': {'pref': None, 'suf': None},
+                'file': {'pref': None, 'suf': 'larvaid.txt', 'sep': '_'}
+            }
 
+        },
+        'arena': env.arena(0.193, 0.193)
     },
-'arena': env.arena(0.193, 0.193)
-    },
-    'parameterization':  {'bend': 'from_angles',
-                  'front_vector': (2, 3),
-                  'rear_vector': (7, 8),
-                  'front_body_ratio': 0.5,
-                  'point_idx': 8,
-                  'use_component_vel': False,
-                  'scaled_vel_threshold': 0.2},
+    'parameterization': {'bend': 'from_angles',
+                         'front_vector': (2, 3),
+                         'rear_vector': (7, 8),
+                         'front_body_ratio': 0.5,
+                         'point_idx': 8,
+                         'use_component_vel': False,
+                         'scaled_vel_threshold': 0.2},
     'enrichment': JovanicEnrichConf
+
+}
+
+BerniFormat = {
+    'id': 'Berni lab',
+    'path': 'BerniGroup',
+    'tracker': {
+        'resolution': {'fr': 2,
+                       'Npoints': 1,
+                       'Ncontour': 0},
+
+        'filesystem': {
+            'read_sequence': ['Date', 'x','y'],
+            'read_metadata': False,
+            'detect': {
+                'folder': {'pref': None, 'suf': None},
+                'file': {'pref': None, 'suf': None, 'sep': '_-_'}
+            }
+
+        },
+        'arena': env.arena(0.24, 0.24)
+    },
+    'parameterization': {'bend': None,
+                         'front_vector': None,
+                         'rear_vector': None,
+                         'front_body_ratio': None,
+                         'point_idx': -1,
+                         'use_component_vel': False,
+                         'scaled_vel_threshold': 0.2},
+    'enrichment': BerniEnrichConf
 
 }

@@ -200,7 +200,7 @@ chemotax_env = {'arena': arena(0.1, 0.06),
                 'food_params': food_param_conf(list={**odor_source(id='Odor_source', pos=(0.04, 0.0),
                                                                    odor_id='Odor', odor_intensity=8,
                                                                    odor_spread=0.0004, default_color='blue')}),
-                'larva_groups': larva_distro(N=30, loc=(-0.04, 0.0), scale=(0.005, 0.02),
+                'larva_groups': larva_distro(N=8, loc=(-0.04, 0.0), scale=(0.005, 0.02),
                                              orientation_range=(-30.0, 30.0),
                                              model='navigator'),
                 'odorscape': gaussian_odor()}
@@ -273,6 +273,12 @@ focus_env = {'arena': arena(0.01, 0.01),
              'food_params': food_param_conf(),
              'larva_groups': larva_distro(N=1, orientation_range=[90.0, 90.0], model='explorer'),
              'odorscape': None}
+
+single_patch_env = {'arena': arena(0.04, 0.04),
+                   'border_list': {},
+                   'food_params': food_param_conf(list={**dtypes.get_dict('agent', class_name='Source', unique_id='Food', as_entry=True, amount=0.1,radius=0.005)}),
+                   'larva_groups': larva_distro(N=1, model='nengo-larva'),
+                   'odorscape': None}
 
 uniform_food_env = {'arena': dish(0.05),
                     'border_list': {},

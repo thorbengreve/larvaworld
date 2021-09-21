@@ -1,33 +1,35 @@
-import json
 import os.path
 import shutil
 from distutils.dir_util import copy_tree
-
+import numpy as np
 import pandas as pd
+import warnings
+import copy
 
+import lib.aux.functions as fun
+import lib.aux.naming as nam
 from lib.anal.process.basic import preprocess, process
 from lib.anal.process.bouts import annotate
 from lib.anal.process.spatial import align_trajectories, fixate_larva
-from lib.anal.plotting import *
 import lib.conf.env_conf as env
 from lib.conf.data_conf import SimParConf
-from lib.model.modules.intermitter import get_EEB_poly1d
 import lib.conf.dtype_dicts as dtypes
-from lib.stor.paths import RefFolder
-from lib.envs._larvaworld import LarvaWorldReplay
+from lib.envs._larvaworld_replay import LarvaWorldReplay
 
 
 class LarvaDataset:
     def __init__(self, dir, id='unnamed', fr=16, Npoints=3, Ncontour=0, life_params={}, arena_pars=env.dish(0.1),
                  par_conf=SimParConf, filtered_at=np.nan, rescaled_by=np.nan, save_data_flag=True, load_data=True,
-                 sample_dataset='reference'):
+                 sample_dataset='reference', group_id='SimGroup'):
         self.par_config = par_conf
         self.save_data_flag = save_data_flag
         self.define_paths(dir)
         if os.path.exists(self.dir_dict['conf']):
-            fun.load_dict(self.dir_dict['conf'], use_pickle=False)
+            self.config = fun.load_dict(self.dir_dict['conf'], use_pickle=False)
         else:
             self.config = {'id': id,
+                           'group_id': group_id,
+                           'dir': dir,
                            'fr': fr,
                            'filtered_at': filtered_at,
                            'rescaled_by': rescaled_by,
@@ -45,10 +47,8 @@ class LarvaDataset:
         self.configure_body()
         self.define_linear_metrics(self.config)
         if load_data:
-            # self.load()
             try:
                 self.load()
-                # print('Data loaded successfully from stored csv files.')
             except:
                 print('Data not found. Load them manually.')
 
@@ -57,7 +57,6 @@ class LarvaDataset:
             self.step_data = step
             self.agent_ids = step.index.unique('AgentID').values
             self.num_ticks = step.index.unique('Step').size
-            self.starting_tick = step.index.unique('Step')[0] if self.num_ticks>0 else 0
         if end is not None:
             self.endpoint_data = end
         if food is not None:
@@ -100,16 +99,13 @@ class LarvaDataset:
         self.endpoint_data.drop(agents, inplace=True)
         self.agent_ids = self.step_data.index.unique('AgentID').values
         self.num_ticks = self.step_data.index.unique('Step').size
-        self.starting_tick = int(self.step_data.index.unique('Step')[0])
-        self.Nagents = len(self.agent_ids)
+
         fs = [f'{self.aux_dir}/{f}' for f in os.listdir(self.aux_dir)]
         ns = fun.flatten_list([[f'{f}/{n}' for n in os.listdir(f) if n.endswith('.csv')] for f in fs])
         for n in ns:
-            # print(n)
             try:
                 df = pd.read_csv(n, index_col=0)
                 df.loc[~df.index.isin(agents)].to_csv(n, index=True, header=True)
-                # print('ddd')
             except:
                 pass
         if is_last:
@@ -157,62 +153,92 @@ class LarvaDataset:
         pars = [p for p in self.step_data.columns.values if p not in vpars]
         return pars
 
+    # def load(self, step=True, end=True, food=False):
+    #     if step:
+    #         self.step_data = pd.read_csv(self.dir_dict['step'], index_col=['Step', 'AgentID'])
+    #         self.step_data.sort_index(level=['Step', 'AgentID'], inplace=True)
+    #         self.agent_ids = self.step_data.index.unique('AgentID').values
+    #         self.num_ticks = self.step_data.index.unique('Step').size
+    #     if end:
+    #         self.endpoint_data = pd.read_csv(self.dir_dict['end'], index_col=0)
+    #         self.endpoint_data.sort_index(inplace=True)
+    #     if food:
+    #         self.food_endpoint_data = pd.read_csv(self.dir_dict['food'], index_col=0)
+    #         self.food_endpoint_data.sort_index(inplace=True)
+
     def load(self, step=True, end=True, food=False):
+        store = pd.HDFStore(self.dir_dict['data_h5'])
         if step:
-            self.step_data = pd.read_csv(self.dir_dict['step'], index_col=['Step', 'AgentID'])
-            # print(self.step_data)
+            self.step_data = store['step']
             self.step_data.sort_index(level=['Step', 'AgentID'], inplace=True)
             self.agent_ids = self.step_data.index.unique('AgentID').values
             self.num_ticks = self.step_data.index.unique('Step').size
-            self.starting_tick = int(self.step_data.index.unique('Step')[0])
-            self.Nagents = len(self.agent_ids)
         if end:
-            self.endpoint_data = pd.read_csv(self.dir_dict['end'], index_col=0)
-
+            self.endpoint_data = store['end']
             self.endpoint_data.sort_index(inplace=True)
-            self.Nagents = len(self.endpoint_data.index.values)
         if food:
-            self.food_endpoint_data = pd.read_csv(self.dir_dict['food'], index_col=0)
+            self.food_endpoint_data = store['food']
             self.food_endpoint_data.sort_index(inplace=True)
+        store.close()
 
-    def save(self, step=True, end=True, food=False, table_entries=None):
+    @property
+    def N(self):
+        try:
+            return len(self.agent_ids)
+        except:
+            return len(self.endpoint_data.index.values)
+
+    @property
+    def t0(self):
+        try:
+            return int(self.step_data.index.unique('Step')[0])
+        except:
+            return 0
+
+    def save(self, step=True, end=True, food=False):
         if self.save_data_flag == True:
+            store = pd.HDFStore(self.dir_dict['data_h5'])
             if step:
-                self.step_data.to_csv(self.dir_dict['step'], index=True, header=True)
+                store['step'] = self.step_data
             if end:
-                self.endpoint_data.to_csv(self.dir_dict['end'], index=True, header=True)
+                store['end'] = self.endpoint_data
             if food:
-                self.food_endpoint_data.to_csv(self.dir_dict['food'], index=True, header=True)
-            if table_entries is not None:
-                dir = self.dir_dict['table']
-                for name, table in table_entries.items():
-                    table.to_csv(f'{dir}/{name}.csv', index=True, header=True)
+                store['food'] = self.food_endpoint_data
             self.save_config()
+            store.close()
             print(f'Dataset {self.id} stored.')
 
+    def save_dicts(self, env):
+        for l in env.get_flies():
+            if hasattr(l, 'deb') and l.deb is not None:
+                l.deb.finalize_dict(self.dir_dict['deb'])
+            if l.brain.intermitter is not None:
+                l.brain.intermitter.save_dict(self.dir_dict['bout_dicts'])
+
     def save_tables(self, tables):
+        store = pd.HDFStore(self.dir_dict['tables_h5'])
         for name, table in tables.items():
-            path = os.path.join(self.dir_dict['table'], f'{name}.csv')
             df = pd.DataFrame(table)
             if 'unique_id' in df.columns:
                 df.rename(columns={'unique_id': 'AgentID'}, inplace=True)
-                Nagents = len(df['AgentID'].unique().tolist())
-                if Nagents>0 :
-                    Nrows = int(len(df.index) / Nagents)
-                    df['Step'] = np.array([[i] * Nagents for i in range(Nrows)]).flatten()
+                N = len(df['AgentID'].unique().tolist())
+                if N > 0:
+                    Nrows = int(len(df.index) / N)
+                    df['Step'] = np.array([[i] * N for i in range(Nrows)]).flatten()
                     df.set_index(['Step', 'AgentID'], inplace=True)
                     df.sort_index(level=['Step', 'AgentID'], inplace=True)
-                df.to_csv(path, index=True, header=True)
+                store[name] = df
+        store.close()
 
     def save_config(self):
-
-        try:
-            self.config['Nagents'] = self.Nagents
-        except:
-            pass
-        for k,v in self.config.items() :
-            if type(v)==np.ndarray :
-                self.config[k]=v.tolist()
+        for a in ['N', 't0', 'duration', 'quality', 'dt']:
+            try:
+                self.config[a] = getattr(self, a)
+            except:
+                pass
+        for k, v in self.config.items():
+            if type(v) == np.ndarray:
+                self.config[k] = v.tolist()
         fun.save_dict(self.config, self.dir_dict['conf'], use_pickle=False)
 
     def save_agent(self, pars=None, header=True):
@@ -230,38 +256,42 @@ class LarvaDataset:
             agent_data.to_csv(file_path, index=True, header=header)
         print('All agent data saved.')
 
-    def load_aux(self, type, name=None, file=None, as_df=True):
-        if file is None:
-            if name is not None:
-                file = f'{name}.csv'
-            else:
-                raise ValueError('Neither filename nor parameter provided')
-        dir = self.dir_dict[type]
-        path = f'{dir}/{file}'
-        # print(path)
-        # raise
-        u_path=f'{dir}/units.csv'
-        index_col = 0 if type != 'table' else ['Step', 'AgentID']
+    def load_bout_dicts(self, ids=None):
+        if ids is None:
+            ids = self.agent_ids
+        dir = self.dir_dict['bout_dicts']
+        d = {}
+        for id in ids:
+            file = f'{dir}/{id}.txt'
+            dic = fun.load_dicts([file])[0]
+            df = pd.DataFrame.from_dict(dic)
+            df.index.set_names(0, inplace=True)
+            d[id] = df
 
+        return d
 
-        try:
-            df= pd.read_csv(path, index_col=index_col)
-        except:
-            try :
-                df= fun.load_dicts([path])[0]
-                if as_df :
-                    df=pd.DataFrame.from_dict(df)
-                    df.index.set_names(index_col, inplace=True)
-                # return df
-            except :
-                raise ValueError(f'No data found at {path}')
+    def load_table(self, name):
+        store = pd.HDFStore(self.dir_dict['tables_h5'])
+        df = store[name]
+        store.close()
+        return df
 
-        if type != 'table' :
-            return df
-        else :
-            u_dic = fun.load_dicts([u_path])[0]
-            return df, u_dic
+    def load_aux(self, type, pars=None):
+        # if type in ['distro', 'dispersion', 'stride'] :
+        store = pd.HDFStore(self.dir_dict['aux_h5'])
+        df = store[f'{type}.{pars}']
+        store.close()
+        return df
 
+    @property
+    def quality(self):
+        df = self.step_data[nam.xy(self.point)[0]].values.flatten()
+        valid = np.count_nonzero(~np.isnan(df))
+        return np.round(valid / df.shape[0], 2)
+
+    @property
+    def duration(self):
+        return int(self.endpoint_data['cum_dur'].max())
 
     def load_deb_dicts(self, ids=None, **kwargs):
         if ids is None:
@@ -270,67 +300,73 @@ class LarvaDataset:
         ds = fun.load_dicts(files=files, folder=self.dir_dict['deb'], **kwargs)
         return ds
 
-    def get_par_list(self, track_point=None):
-        angle_p = ['bend']
-        or_p = ['front_orientation'] + nam.orient(self.segs)
-        chunk_p = ['stride_stop', 'stride_id', 'pause_id', 'feed_id']
-        if track_point is None:
-            track_point = self.point
-        elif type(track_point) == int:
-            track_point = 'centroid' if track_point == -1 else self.points[track_point]
-        if not set(nam.xy(track_point)).issubset(self.step_data.columns):
-            track_point = self.points[int(self.Nsegs / 2)]
-        pos_p = nam.xy(track_point) if set(nam.xy(track_point)).issubset(self.step_data.columns) else ['x', 'y']
-        point_p = nam.xy(self.points, flat=True) if len(self.points_xy) >= 1 else []
-        cent_p = self.cent_xy if len(self.cent_xy) >= 1 else []
-        contour_p = nam.xy(self.contour, flat=True) if len(self.contour_xy) >= 1 else []
+    def get_pars_list(self, p0, s0, draw_Nsegs):
+        if p0 is None:
+            p0 = self.point
+        elif type(p0) == int:
+            p0 = 'centroid' if p0 == -1 else self.points[p0]
+        dic={}
+        dic['pos_p']=pos_p = nam.xy(p0) if set(nam.xy(p0)).issubset(s0.columns) else ['x', 'y']
+        dic['mid_p']=mid_p = [xy for xy in self.points_xy if set(xy).issubset(s0.columns)]
+        dic['cen_p']=cen_p = self.cent_xy if set(self.cent_xy).issubset(s0.columns) else []
+        dic['con_p']=con_p = [xy for xy in self.contour_xy if set(xy).issubset(s0.columns)]
+        dic['chunk_p'] = chunk_p = [p for p in ['stride_stop', 'stride_id', 'pause_id', 'feed_id'] if p in s0.columns]
+        if draw_Nsegs is None :
+            dic['ang_p'] = ang_p = []
+            dic['ors_p'] = ors_p = []
+        elif draw_Nsegs==2 and {'bend', 'front_orientation'}.issubset(s0.columns) :
+            dic['ang_p']=ang_p = ['bend']
+            dic['ors_p'] = ors_p=['front_orientation']
+        elif draw_Nsegs==len(mid_p)-1 and set(nam.orient(self.segs)).issubset(s0.columns) :
+            dic['ang_p'] = ang_p = []
+            dic['ors_p']=ors_p = nam.orient(self.segs)
+        else :
+            raise ValueError (f'The required angular parameters for reconstructing a {draw_Nsegs}-segment body do not exist')
 
-        pars = np.unique(cent_p + point_p + pos_p + contour_p + angle_p + or_p + chunk_p).tolist()
-        return pars, pos_p, track_point
+        pars = fun.unique_list(cen_p + pos_p+ ang_p + ors_p + chunk_p + fun.flatten_list(mid_p  + con_p))
 
-    def get_smaller_dataset(self, ids=None, pars=None, time_range=None, dynamic_color=None):
-        if self.step_data is None:
-            self.load()
+        return dic, pars, p0
+
+    def get_smaller_dataset(self, s0, e0, ids=None, pars=None, time_range=None, dynamic_color=None):
         if ids is None:
             ids = self.agent_ids
         if type(ids) == list and all([type(i) == int for i in ids]):
             ids = [self.agent_ids[i] for i in ids]
-        if pars is None:
-            pars = self.step_data.columns.values.tolist()
-        elif dynamic_color is not None:
+        if dynamic_color is not None and dynamic_color in s0.columns:
             pars.append(dynamic_color)
-        pars = [p for p in pars if p in self.step_data.columns]
+            # traj_color =s0[dynamic_color]
+        else :
+            dynamic_color=None
+        pars = [p for p in pars if p in s0.columns]
         if time_range is None:
-            s = copy.deepcopy(self.step_data.loc[(slice(None), ids), pars])
+            s = copy.deepcopy(s0.loc[(slice(None), ids), pars])
         else:
             a, b = time_range
             a = int(a / self.dt)
             b = int(b / self.dt)
             # tick_range=(np.array(time_range)/self.dt).astype(int)
-            s = copy.deepcopy(self.step_data.loc[(slice(a, b), ids), pars])
-        e = copy.deepcopy(self.endpoint_data.loc[ids])
-        return s, e, ids
+            s = copy.deepcopy(s0.loc[(slice(a, b), ids), pars])
+        e = copy.deepcopy(e0.loc[ids])
+        traj_color = s[dynamic_color] if dynamic_color is not None else None
+        return s, e, ids, traj_color
 
-    def visualize(self, vis_kwargs=None, agent_ids=None, save_to=None, time_range=None, draw_Nsegs=None,
+    def visualize(self, vis_kwargs=None, agent_ids=None, save_to=None, time_range=None,draw_Nsegs=None,
                   arena_pars=None, env_params=None, space_in_mm=True, track_point=None, dynamic_color=None,
                   transposition=None, fix_point=None, secondary_fix_point=None, **kwargs):
-        if vis_kwargs is None :
-            vis_kwargs=dtypes.get_dict('visualization', mode='video')
-
-        pars, pos_xy_pars, track_point = self.get_par_list(track_point)
-        s, e, ids = self.get_smaller_dataset(ids=agent_ids, pars=pars, time_range=time_range,
-                                             dynamic_color=dynamic_color)
-        contour_xy = nam.xy(self.contour, flat=True)
-        # print(contour_xy)
-        if (len(contour_xy) == 0 or not set(contour_xy).issubset(s.columns)) and draw_Nsegs is None:
-            draw_Nsegs = self.Nsegs
+        if vis_kwargs is None:
+            vis_kwargs = dtypes.get_dict('visualization', mode='video')
+        if self.step_data is None:
+            self.load()
+        s0, e0=self.step_data, self.endpoint_data
+        dic, pars, track_point = self.get_pars_list(track_point, s0, draw_Nsegs)
+        s, e, ids, traj_color = self.get_smaller_dataset(ids=agent_ids, pars=pars, time_range=time_range,
+                                             dynamic_color=dynamic_color, s0=s0, e0=e0)
         if len(ids) == 1:
             n0 = ids[0]
         elif len(ids) == len(self.agent_ids):
             n0 = 'all'
         else:
             n0 = f'{len(ids)}l'
-        traj_color = s[dynamic_color] if dynamic_color is not None else None
 
         if env_params is None:
             if arena_pars is None:
@@ -339,18 +375,14 @@ class LarvaDataset:
         arena_dims = [k * 1000 for k in env_params['arena']['arena_dims']]
         env_params['arena']['arena_dims'] = arena_dims
 
-
-
         if transposition is not None:
-            s = align_trajectories(s, self.Npoints, self.Ncontour, track_point=track_point, arena_dims=arena_dims,
-                                   mode=transposition)
-            # s = self.align_trajectories(s=s, mode=transposition, arena_dims=arena_dims, track_point=track_point)
+            s = align_trajectories(s, track_point=track_point, arena_dims=arena_dims, mode=transposition,
+                                   config=self.config)
             bg = None
             n1 = 'transposed'
         elif fix_point is not None:
-            s, bg = fixate_larva(s, self.Npoints, self.Ncontour, point=fix_point, secondary_point=secondary_fix_point,
-                                 arena_dims=arena_dims)
-            # s, bg = self.fix_point(point=fix_point, secondary_point=secondary_fix_point, s=s, arena_dims=arena_dims)
+            s, bg = fixate_larva(s, point=fix_point, secondary_point=secondary_fix_point,
+                                 arena_dims=arena_dims, config=self.config)
             n1 = 'fixed'
         else:
             bg = None
@@ -360,12 +392,23 @@ class LarvaDataset:
             vis_kwargs['render']['media_name'] = replay_id
         if save_to is None:
             save_to = self.vis_dir
-        Nsteps = len(s.index.unique('Step').values)
 
-        replay_env = LarvaWorldReplay(id=replay_id, env_params=env_params, space_in_mm=space_in_mm, dt=self.dt,
-                                      vis_kwargs=vis_kwargs, save_to=save_to, background_motion=bg,
-                                      dataset=self, step_data=s, endpoint_data=e, Nsteps=Nsteps, draw_Nsegs=draw_Nsegs,
-                                      pos_xy_pars=pos_xy_pars, traj_color=traj_color, **kwargs)
+        base_kws = {
+            'vis_kwargs': vis_kwargs,
+            'env_params': env_params,
+            'id': replay_id,
+            'dt': self.dt,
+            'Nsteps': len(s.index.unique('Step').values),
+            'save_to': save_to,
+            'background_motion': bg,
+            'Box2D': False,
+            'traj_color': traj_color,
+            'space_in_mm': space_in_mm
+        }
+
+        replay_env = LarvaWorldReplay(step_data=s, endpoint_data=e, config=self.config,
+                                      **dic, draw_Nsegs=draw_Nsegs,
+                                      **base_kws, **kwargs)
 
         replay_env.run()
         print('Visualization complete')
@@ -379,8 +422,8 @@ class LarvaDataset:
             'Ncontour': self.Ncontour,
             'point': self.point,
             'config': self.config,
-            'distro_dir': self.dir_dict['distro'],
-            'dsp_dir': self.dir_dict['dispersion'],
+            # 'distro_dir': self.dir_dict['distro'],
+            # 'dsp_dir': self.dir_dict['dispersion'],
         }
         process(**c, **kwargs)
         if is_last:
@@ -401,9 +444,9 @@ class LarvaDataset:
     def compute_preference_index(self, arena_diameter_in_mm=None, return_num=False, return_all=False, show_output=True):
         if not hasattr(self, 'endpoint_data'):
             self.load(step=False)
-        e=self.endpoint_data
+        e = self.endpoint_data
         r = 0.2 * self.arena_pars['arena_dims'][0]
-        p='x' if 'x' in e.keys() else nam.final('x')
+        p = 'x' if 'x' in e.keys() else nam.final('x')
         d = e[p]
         N = d.count()
         N_l = d[d <= -r / 2].count()
@@ -448,8 +491,8 @@ class LarvaDataset:
             'Npoints': self.Npoints,
             'point': self.point,
             'config': self.config,
-            'distro_dir': self.dir_dict['distro'],
-            'stride_p_dir': self.dir_dict['stride'],
+            # 'distro_dir': self.dir_dict['distro'],
+            # 'stride_p_dir': self.dir_dict['stride'],
         }
 
         annotate(**c, **kwargs)
@@ -472,11 +515,10 @@ class LarvaDataset:
         stats = target['statistic'].values.tolist()
         return pars, dists, stats
 
-
     def configure_body(self):
         N, Nc = self.Npoints, self.Ncontour
-        # print(N,Nc)
         self.points = nam.midline(N, type='point')
+
         self.Nangles = np.clip(N - 2, a_min=0, a_max=None)
         self.angles = [f'angle{i}' for i in range(self.Nangles)]
         self.Nsegs = np.clip(N - 1, a_min=0, a_max=None)
@@ -505,6 +547,12 @@ class LarvaDataset:
         self.ang_pars = ang + nam.unwrap(ang) + nam.vel(ang) + nam.acc(ang)
         self.xy_pars = nam.xy(self.points + self.contour + ['centroid'], flat=True) + nam.xy('')
 
+        try:
+            self.config['point'] = self.points[self.config['point_idx'] - 1]
+        except:
+            self.config['point'] = 'centroid'
+        self.point = self.config['point']
+
     def define_paths(self, dir):
         self.dir = dir
         self.data_dir = os.path.join(dir, 'data')
@@ -518,29 +566,19 @@ class LarvaDataset:
             'vis': self.vis_dir,
             'comp_plot': os.path.join(self.plot_dir, 'comparative'),
             'deb': os.path.join(self.data_dir, 'deb_dicts'),
-            'aux': self.aux_dir,
-            'distro': os.path.join(self.aux_dir, 'par_distros'),
-            'stride': os.path.join(self.aux_dir, 'par_during_stride'),
-            'dispersion': os.path.join(self.aux_dir, 'dispersion'),
-            'bouts': os.path.join(self.aux_dir, 'bouts'),
-            'table': os.path.join(self.aux_dir, 'tables'),
-            'step': os.path.join(self.data_dir, 'step.csv'),
-            'end': os.path.join(self.data_dir, 'end.csv'),
-            'food': os.path.join(self.data_dir, 'food.csv'),
+            'bout_dicts': os.path.join(self.data_dir, 'bout_dicts'),
+            'tables_h5': os.path.join(self.data_dir, 'tables.h5'),
             'sim': os.path.join(self.data_dir, 'sim_conf.txt'),
             'fit': os.path.join(self.data_dir, 'dataset_fit.csv'),
             'conf': os.path.join(self.data_dir, 'dataset_conf.csv'),
+            'data_h5': os.path.join(self.data_dir, 'data.h5'),
+            'aux_h5': os.path.join(self.data_dir, 'aux.h5'),
         }
-        # self.build_dirs()
         for k, v in self.dir_dict.items():
-            if not str.endswith(v, 'csv') and not str.endswith(v, 'txt'):
+            if not str.endswith(v, 'csv') and not str.endswith(v, 'txt') and not str.endswith(v, 'h5'):
                 os.makedirs(v, exist_ok=True)
 
     def define_linear_metrics(self, config):
-        if type(config['point_idx'])==int:
-            self.point = self.points[config['point_idx'] - 1]
-        else:
-            self.point = 'centroid'
         self.distance = nam.dst(self.point)
         self.velocity = nam.vel(self.point)
         self.acceleration = nam.acc(self.point)
@@ -549,8 +587,8 @@ class LarvaDataset:
             self.velocity = nam.lin(self.velocity)
             self.acceleration = nam.lin(self.acceleration)
 
-    def enrich(self,preprocessing={},processing={},annotation={},enrich_aux={},
-               to_drop={}, show_output=False,is_last=True, **kwargs):
+    def enrich(self, preprocessing={}, processing={}, annotation={}, enrich_aux={},
+               to_drop={}, show_output=False, is_last=True, **kwargs):
         print()
         print(f'--- Enriching dataset {self.id} with derived parameters ---')
         self.config['front_body_ratio'] = 0.5
@@ -558,54 +596,13 @@ class LarvaDataset:
         warnings.filterwarnings('ignore')
         c = {'show_output': show_output,
              'is_last': False}
-        self.preprocess( **preprocessing,**c, **enrich_aux, **kwargs)
+        self.preprocess(**preprocessing, **c, **enrich_aux, **kwargs)
         self.process(**processing, **enrich_aux, **c, **kwargs)
         self.annotate(**annotation, **enrich_aux, **c, **kwargs)
         self.drop_pars(**to_drop, **c)
         if is_last:
             self.save()
         return self
-
-    def create_reference_dataset(self, dataset_id='reference', Nstd=3, overwrite=False):
-        if self.endpoint_data is None:
-            self.load()
-        # if not os.path.exists(RefFolder):
-        #     os.makedirs(RefFolder)
-        path_dir = f'{RefFolder}/{dataset_id}'
-        path_data = f'{path_dir}/data/reference.csv'
-        path_fits = f'{path_dir}/data/bout_fits.csv'
-        if not os.path.exists(path_dir) or overwrite:
-            copy_tree(self.dir, path_dir)
-        new_d = LarvaDataset(path_dir)
-        new_d.set_id(dataset_id)
-        pars = ['length', nam.freq(nam.scal(nam.vel(''))),
-                'stride_reoccurence_rate',
-                nam.mean(nam.scal(nam.chunk_track('stride', nam.dst('')))),
-                nam.std(nam.scal(nam.chunk_track('stride', nam.dst(''))))]
-        sample_pars = ['body.initial_length', 'brain.crawler_params.initial_freq',
-                       'brain.intermitter_params.crawler_reoccurence_rate',
-                       'brain.crawler_params.step_to_length_mu',
-                       'brain.crawler_params.step_to_length_std'
-                       ]
-
-        v = new_d.endpoint_data[pars]
-        v['length'] = v['length'] / 1000
-        df = pd.DataFrame(v.values, columns=sample_pars)
-        df.to_csv(path_data)
-
-        fit_bouts(new_d, store=True, bouts=['stride', 'pause'])
-
-        dic = {
-            nam.freq('crawl'): v[nam.freq(nam.scal(nam.vel('')))].mean(),
-            nam.freq('feed'): v[nam.freq('feed')].mean() if nam.freq('feed') in v.columns else 2.0,
-            'feeder_reoccurence_rate': None,
-            'dt': self.dt,
-        }
-        saveConf(dic, conf_type='Ref', id=dataset_id, mode='update')
-        z = get_EEB_poly1d(dataset_id)
-        saveConf({'EEB_poly1d': z.c.tolist()}, conf_type='Ref', id=dataset_id, mode='update')
-
-        print(f'Reference dataset {dataset_id} saved.')
 
     def drop_immobile_larvae(self, vel_threshold=0.1, is_last=True):
         # self.compute_spatial_metrics(mode='minimal')
@@ -615,16 +612,13 @@ class LarvaDataset:
             d = D.xs(id, level='AgentIDs').dropna().values
             if len(d[d > vel_threshold]) == 0:
                 immobile_ids.append(id)
-        # e = self.end
-        # dsts = e[nam.cum(nam.dst(self.point))]
-        # immobile_ids = dsts[dsts < min_dst].index.values
         print(f'{len(immobile_ids)} immobile larvae will be dropped')
         if len(immobile_ids) > 0:
             self.drop_agents(agents=immobile_ids, is_last=is_last)
 
     def get_par(self, par, endpoint_par=True):
         try:
-            p_df = self.load_aux(type='distro', name=par)
+            p_df = self.load_aux(type='distro', pars=par)
         except:
             if endpoint_par:
                 if not hasattr(self, 'end'):
@@ -652,11 +646,6 @@ class LarvaDataset:
         if save:
             self.save_config()
 
-    # def build_dirs(self):
-    #     for k, v in self.dir_dict.items():
-    #         if not str.endswith(v, 'csv') and not str.endswith(v, 'txt'):
-    #             os.makedirs(v, exist_ok=True)
-
     def split_dataset(self, groups=None, is_last=True, show_output=True):
         if groups is None:
             groups = fun.unique_list([id.split('_')[0] for id in self.agent_ids])
@@ -669,7 +658,6 @@ class LarvaDataset:
             if self.step_data is None:
                 self.load()
             new_ds = []
-            # print(self.agent_ids)
             for f, new_dir in zip(groups, new_dirs):
                 invalid_ids = [id for id in self.agent_ids if not str.startswith(id, f)]
                 copy_tree(self.dir, new_dir)
@@ -696,8 +684,3 @@ class LarvaDataset:
         ser1.reset_index(level='Step', drop=True, inplace=True)
         ser1 = ser1.reset_index(drop=False).values.tolist()
         s = s.loc[s[id]]
-
-# if __name__ == '__main__':
-#     d=conf.loadConf('odor_preference', 'Life')
-#     for k,v in d.items() :
-#         print(k,v,type(v))

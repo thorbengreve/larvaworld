@@ -7,7 +7,7 @@ import lib.aux.naming as nam
 import lib.conf.dtype_dicts as dtypes
 from lib.anal.process.angular import angular_processing
 from lib.anal.process.spatial import spatial_processing, compute_bearingNdst2source, compute_dispersion, \
-    compute_tortuosity, compute_preference_index
+    compute_tortuosity, compute_preference_index, align_trajectories
 from lib.conf.par import getPar
 
 
@@ -63,8 +63,6 @@ def compute_freq(s, e, dt, parameters, freq_range=None, compare_params=False):
     V = np.zeros(Npars)
     F = np.ones((Npars, Nids)) * np.nan
     for i, p in enumerate(parameters):
-        # if show_output:
-        #     print(f'Calculating dominant frequency for paramater {p}')
         for j, id in enumerate(ids):
             d = s[p].xs(id, level='AgentID', drop_level=True)
             try:
@@ -78,14 +76,10 @@ def compute_freq(s, e, dt, parameters, freq_range=None, compare_params=False):
                 max_freq = f[np.argmax(np.nanmedian(Sxx, axis=1))]
             except:
                 max_freq = np.nan
-                # if show_output:
-                #     print(f'Dominant frequency of {p} for {id} not found')
             F[i, j] = max_freq
     if compare_params:
         ind = np.argmax(V)
         best_p = parameters[ind]
-        # if show_output:
-        #     print(f'Best parameter : {best_p}')
         existing = fun.common_member(nam.freq(parameters), e.columns.values)
         e.drop(columns=existing, inplace=True)
         e[nam.freq(best_p)] = F[ind]
@@ -139,7 +133,6 @@ def rescale(s,e, Npoints, config=None, recompute=False, scale=1.0):
         s[p] = s[p].apply(lambda x: x * scale)
     if 'length' in e.columns:
         e['length'] = e['length'].apply(lambda x: x * scale)
-    # self.rescaled_by = scale
     print(f'Dataset rescaled by {scale}.')
 
 def exclude_rows(s,e, dt,  flag, accepted=None, rejected=None):
@@ -150,13 +143,11 @@ def exclude_rows(s,e, dt,  flag, accepted=None, rejected=None):
 
         p=getPar('cum_t', to_return=['d'])[0]
         for id in s.index.unique('AgentID').values:
-            # e.loc[id, 'num_ticks'] = len(s.xs(id, level='AgentID', drop_level=True).dropna())
             e.loc[id, p] = len(s.xs(id, level='AgentID', drop_level=True).dropna()) * dt
-            # e.loc[id, 'cum_dur'] = e.loc[id, 'num_ticks'] * dt
 
         print(f'Rows excluded according to {flag}.')
 
-def preprocess(s,e,dt,Npoints, rescale_by=None,drop_collisions=False,interpolate_nans=False,filter_f=None,
+def preprocess(s,e,dt,Npoints, rescale_by=None,drop_collisions=False,interpolate_nans=False,filter_f=None,transposition=None,
                config=None,  recompute=False,show_output=True,**kwargs) :
     with fun.suppress_stdout(show_output):
         if rescale_by is not None :
@@ -167,6 +158,8 @@ def preprocess(s,e,dt,Npoints, rescale_by=None,drop_collisions=False,interpolate
             interpolate_nans(s, Npoints)
         if filter_f is not None :
             filter(s, dt, Npoints, config, recompute=recompute, freq=filter_f)
+        if transposition is not None :
+            align_trajectories(s, config=config,mode=transposition)
         return s,e
 
 def generate_traj_colors(s, sp_vel=None, ang_vel=None):
@@ -203,20 +196,21 @@ def process(s,e,dt,Npoints,Ncontour, point, config=None,
         'point': point,
         'config': config,
         'mode': mode,
+        'aux_dir': f'{config["dir"]}/data/aux.h5',
     }
 
     with fun.suppress_stdout(show_output):
         if types['angular']:
-            angular_processing(**c, distro_dir=distro_dir, **kwargs)
+            angular_processing(**c, **kwargs)
         if types['spatial']:
-            spatial_processing(**c, dsp_dir=dsp_dir, **kwargs)
+            spatial_processing(**c, **kwargs)
         if types['source']:
             if source is not None:
                 compute_bearingNdst2source(s, e, source=source, **kwargs)
         if types['dispersion'] and type(dsp_starts)==list and type(dsp_stops)==list:
-            compute_dispersion(s, e, dt, point, starts=dsp_starts, stops=dsp_stops, dir=dsp_dir, **kwargs)
+            compute_dispersion(**c, starts=dsp_starts, stops=dsp_stops, **kwargs)
         if types['tortuosity'] and type(tor_durs)==list:
-            compute_tortuosity(s, e, dt, durs_in_sec=tor_durs, **kwargs)
+            compute_tortuosity(**c, durs_in_sec=tor_durs, **kwargs)
         if types['PI']:
             if 'x' in e.keys() :
                 px = 'x'
@@ -241,8 +235,4 @@ def process(s,e,dt,Npoints,Ncontour, point, config=None,
                 pass
         return s,e
 
-if __name__ == '__main__':
-    from lib.stor.managing import get_datasets
-    d = get_datasets(datagroup_id='SimGroup', last_common='single_runs', names=['dish/ppp'], mode='load')[0]
-    s=d.step_data
-    d.perform_angular_analysis(show_output=True)
+

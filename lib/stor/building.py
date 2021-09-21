@@ -3,14 +3,13 @@ import os.path
 import pandas as pd
 
 from lib.conf.conf import *
-from lib.aux.functions import match_larva_ids
+from lib.aux.functions import match_larva_ids, convex_hull
 from lib.aux import functions as fun
 from lib.aux import naming as nam
 
 
 def build_Schleyer(dataset, build_conf, raw_folders, save_mode='semifull',
-                   use_tick_index=True, max_Nagents=None, complete_ticks=True,
-                   min_end_time_in_sec=0, min_duration_in_sec=0, start_time_in_sec=0, **kwargs):
+                   max_Nagents=None, min_end_time_in_sec=0, min_duration_in_sec=0, start_time_in_sec=0, **kwargs):
     d = dataset
     dt=d.dt
     cols0 = build_conf['read_sequence']
@@ -31,8 +30,6 @@ def build_Schleyer(dataset, build_conf, raw_folders, save_mode='semifull',
     elif save_mode == 'semifull':
         cols1 = nam.xy(d.points, flat=True) + nam.xy(d.contour, flat=True) + [
             'collision_flag']
-    # elif save_mode == 'spinepointsNcollision':
-    #     cols1 = nam.xy(d.points, flat=True) + ['collision_flag']
     elif save_mode == 'points':
         cols1 = nam.xy(d.points, flat=True) + ['collision_flag']
 
@@ -44,8 +41,6 @@ def build_Schleyer(dataset, build_conf, raw_folders, save_mode='semifull',
         df = pd.read_csv(f, header=None, index_col=0, names=cols0)
         # FIXME This has been added because some csv in Schleyer datasets have index=NA. This happens if a larva is lost and refound by tracker
         df = df.dropna()
-        if use_tick_index == False:
-            df.index = np.arange(len(df))
 
         if len(df) >= int(min_duration_in_sec / dt) and df.index.max() >= int(min_end_time_in_sec / dt):
             df = df[df.index >= int(start_time_in_sec / dt)]
@@ -54,11 +49,6 @@ def build_Schleyer(dataset, build_conf, raw_folders, save_mode='semifull',
             if inv_x:
                 for x_par in [p for p in cols1 if p.endswith('x')]:
                     df[x_par] *= -1
-            # # This scales mm to meters
-            # for p in cols1 :
-            #     if p.endswith('x') or p.endswith('y') :
-            #         df[p] *= 0.001
-
             Nvalid += 1
             dfs.append(df)
             ids.append(f'Larva_{Nvalid}')
@@ -66,27 +56,19 @@ def build_Schleyer(dataset, build_conf, raw_folders, save_mode='semifull',
                 break
     if len(dfs) == 0:
         return None, None
-    if complete_ticks:
-        t0, t1 = np.min([df.index.min() for df in dfs]), np.max([df.index.max() for df in dfs])
-        df0 = pd.DataFrame(np.nan, index=np.arange(t0, t1 + 1).tolist(), columns=cols1)
-        df0.index.name = 'Step'
+    t0, t1 = np.min([df.index.min() for df in dfs]), np.max([df.index.max() for df in dfs])
+    df0 = pd.DataFrame(np.nan, index=np.arange(t0, t1 + 1).tolist(), columns=cols1)
+    df0.index.name = 'Step'
 
-        for i, (df, id) in enumerate(zip(dfs, ids)):
-            ddf = df0.copy(deep=True)
-            end = end.append({'AgentID': id,
-                              'num_ticks': len(df),
-                              'cum_dur': len(df) * dt}, ignore_index=True)
-            ddf.update(df)
-            ddf = ddf.assign(AgentID=id).set_index('AgentID', append=True)
-            step = ddf if i == 0 else step.append(ddf)
+    for i, (df, id) in enumerate(zip(dfs, ids)):
+        ddf = df0.copy(deep=True)
+        end = end.append({'AgentID': id,
+                          'num_ticks': len(df),
+                          'cum_dur': len(df) * dt}, ignore_index=True)
+        ddf.update(df)
+        ddf = ddf.assign(AgentID=id).set_index('AgentID', append=True)
+        step = ddf if i == 0 else step.append(ddf)
 
-    else:
-        for i, (df, id) in enumerate(zip(dfs, ids)):
-            end = end.append({'AgentID': id,
-                              'num_ticks': len(df),
-                              'cum_dur': len(df) * dt}, ignore_index=True)
-            df = df.assign(AgentID=id).set_index('AgentID', append=True)
-            step = df if i == 0 else step.append(df)
     end.set_index('AgentID', inplace=True)
 
     # I add this because some 'na' values were found
@@ -94,10 +76,11 @@ def build_Schleyer(dataset, build_conf, raw_folders, save_mode='semifull',
     return step, end
 
 
-def build_Jovanic(dataset, build_conf, source_dir, max_Nagents=None, complete_ticks=True, min_duration_in_sec=0,
-                  **kwargs):
-    temp_step_path = f'{source_dir}_step.csv'
-    temp_length_path = f'{source_dir}_length.csv'
+def build_Jovanic(dataset, build_conf, source_dir, max_Nagents=None, min_duration_in_sec=0.0,
+                  match_ids=True,**kwargs):
+    pref=f'{source_dir}/{dataset.id}'
+    temp_step_path = f'{pref}_step.csv'
+    temp_length_path = f'{pref}_length.csv'
 
     def temp_save(step, length):
         step.to_csv(temp_step_path, index=True, header=True)
@@ -113,27 +96,36 @@ def build_Jovanic(dataset, build_conf, source_dir, max_Nagents=None, complete_ti
     fr = d.fr
     x_pars = [x for x, y in d.points_xy]
     y_pars = [y for x, y in d.points_xy]
+    xc_pars = [x for x, y in d.contour_xy]
+    yc_pars = [y for x, y in d.contour_xy]
 
     try:
         temp, e = temp_load()
         print('Loaded temporary data successfully!')
     except:
 
-        t_file = f'{source_dir}_t.txt'
-        # t_file = os.path.join(source_dir, 't.txt')
-        id_file = f'{source_dir}_larvaid.txt'
-        # id_file = os.path.join(source_dir, 'larvaid.txt')
-        x_file = f'{source_dir}_x_spine.txt'
-        # x_file = os.path.join(source_dir, 'x_spine.txt')
-        y_file = f'{source_dir}_y_spine.txt'
-        # y_file = os.path.join(source_dir, 'y_spine.txt')
-        state_file = f'{source_dir}_global_state_large_state.txt'
-        # state_file = f'{source_dir}_state.txt'
-        # state_file = os.path.join(source_dir, 'state.txt')
+        t_file = f'{pref}_t.txt'
+        id_file = f'{pref}_larvaid.txt'
+        x_file = f'{pref}_x_spine.txt'
+        y_file = f'{pref}_y_spine.txt'
+        state_file = f'{pref}_global_state_large_state.txt'
+
+        x_contour_file = f'{pref}_x_contour.txt'
+        y_contour_file = f'{pref}_y_contour.txt'
+
+
+
 
         xs = pd.read_csv(x_file, header=None, sep='\t', names=x_pars)
         ys = pd.read_csv(y_file, header=None, sep='\t', names=y_pars)
         ts = pd.read_csv(t_file, header=None, sep='\t', names=['Step'])
+
+        xcs = pd.read_csv(x_contour_file, header=None, sep='\t')
+        ycs = pd.read_csv(y_contour_file, header=None, sep='\t')
+        xcs,ycs=fun.convex_hull(xs=xcs.values,ys=ycs.values, N=d.Ncontour)
+        xcs=pd.DataFrame(xcs, columns=xc_pars, index=None)
+        ycs=pd.DataFrame(ycs, columns=yc_pars, index=None)
+
         try:
             states = pd.read_csv(state_file, header=None, sep='\t', names=['state'])
         except:
@@ -144,7 +136,8 @@ def build_Jovanic(dataset, build_conf, source_dir, max_Nagents=None, complete_ti
 
         min_t, max_t = float(ts.min()), float(ts.max())
 
-        par_list = [ids, ts, xs, ys]
+        par_list = [ids, ts, xs, ys, xcs,ycs]
+
         if states is not None:
             par_list.append(states)
 
@@ -189,10 +182,8 @@ def build_Jovanic(dataset, build_conf, source_dir, max_Nagents=None, complete_ti
         temp.reset_index(drop=False, inplace=True)
         temp.set_index(keys=['Step', 'AgentID'], inplace=True, drop=True)
         temp_save(temp, e)
-        # return None, None
-
-    temp = match_larva_ids(s=temp, e=e, pars=['head_x', 'head_y'], **kwargs)
-    # temp = match_larva_ids(sigma=temp, pars=['head_x', 'head_y'], e=e,min_Nids=min_Nids, dl=dl, **kwargs)
+    if match_ids :
+        temp = match_larva_ids(s=temp, e=e, pars=['head_x', 'head_y'], **kwargs)
     temp.reset_index(level='Step', drop=False, inplace=True)
     old_ids = temp.index.unique().tolist()
     new_ids = [f'Larva_{100 + i}' for i in range(len(old_ids))]
@@ -202,34 +193,72 @@ def build_Jovanic(dataset, build_conf, source_dir, max_Nagents=None, complete_ti
     max_step = int(temp['Step'].max())
     temp.set_index(keys=['Step', 'AgentID'], inplace=True, drop=True)
     temp.sort_index(level=['Step', 'AgentID'], inplace=True)
-    # print(temp[temp.index.duplicated()])
     temp.drop_duplicates(inplace=True)
-    if complete_ticks:
-        trange = np.arange(max_step).astype(int)
-        my_index = pd.MultiIndex.from_product([trange, new_ids], names=['Step', 'AgentID'])
-        columns = x_pars + y_pars
-        if 'state' in temp.columns:
-            columns.append('state')
 
-        step_data = pd.DataFrame(index=my_index, columns=columns)
-        step_data.update(temp)
-    else:
-        step_data = temp
-    endpoint_data = temp['head_x'].dropna().groupby('AgentID').count().to_frame()
-    endpoint_data.columns = ['num_ticks']
-    endpoint_data['cum_dur'] = endpoint_data['num_ticks'] / fr
+    trange = np.arange(max_step).astype(int)
+    my_index = pd.MultiIndex.from_product([trange, new_ids], names=['Step', 'AgentID'])
+    columns = x_pars + y_pars + xc_pars + yc_pars
+    if 'state' in temp.columns:
+        columns.append('state')
+
+    step = pd.DataFrame(index=my_index, columns=columns)
+    step.update(temp)
+    end = temp['head_x'].dropna().groupby('AgentID').count().to_frame()
+    end.columns = ['num_ticks']
+    end['cum_dur'] = end['num_ticks'] / fr
 
     if max_Nagents is not None:
-        selected = endpoint_data.nlargest(max_Nagents, columns='num_ticks').index.values
-        step_data = step_data.loc[(slice(None), selected), :]
-        endpoint_data = endpoint_data.loc[selected]
+        selected = end.nlargest(max_Nagents, columns='num_ticks').index.values
+        step = step.loc[(slice(None), selected), :]
+        end = end.loc[selected]
 
     if min_duration_in_sec > 0:
-        selected = endpoint_data[endpoint_data['cum_dur'] >= min_duration_in_sec].index.values
-        step_data = step_data.loc[(slice(None), selected), :]
-        endpoint_data = endpoint_data.loc[selected]
+        selected = end[end['cum_dur'] >= min_duration_in_sec].index.values
+        step = step.loc[(slice(None), selected), :]
+        end = end.loc[selected]
 
-    return step_data, endpoint_data
+    return step, end
+
+def build_Berni(dataset, build_conf, source_files, max_Nagents=None, min_duration_in_sec=0.0,
+                  match_ids=True,min_end_time_in_sec=0, start_time_in_sec=0,**kwargs):
+    d = dataset
+    dt = d.dt
+    end = pd.DataFrame(columns=['AgentID', 'num_ticks', 'cum_dur'])
+    Nvalid = 0
+    dfs = []
+    ids = []
+    cols0 = build_conf['read_sequence']
+    cols1=cols0[1:]
+    fs = source_files
+    # fs = [os.path.join(source_dir, n) for n in os.listdir(source_dir) if n.startswith(dataset.id)]
+    for f in fs:
+        df = pd.read_csv(f, header=0, index_col=0, names=cols0)
+        df.reset_index(drop=True,inplace=True)
+        if len(df) >= int(min_duration_in_sec / dt) and len(df) >= int(min_end_time_in_sec / dt):
+            # df = df[df.index >= int(start_time_in_sec / dt)]
+            df = df[cols1]
+            df = df.apply(pd.to_numeric, errors='coerce')
+            Nvalid += 1
+            dfs.append(df)
+            ids.append(f'Larva_{Nvalid}')
+            if max_Nagents is not None and Nvalid >= max_Nagents:
+                break
+        if len(dfs) == 0:
+            return None, None
+    Nticks=np.max([len(df) for df in dfs])
+    df0 = pd.DataFrame(np.nan, index=np.arange(Nticks).tolist(), columns=cols1)
+    df0.index.name = 'Step'
+
+    for i, (df, id) in enumerate(zip(dfs, ids)):
+        ddf = df0.copy(deep=True)
+        end = end.append({'AgentID': id,
+                          'num_ticks': len(df),
+                          'cum_dur': len(df) * dt}, ignore_index=True)
+        ddf.update(df)
+        ddf = ddf.assign(AgentID=id).set_index('AgentID', append=True)
+        step = ddf if i == 0 else step.append(ddf)
+    end.set_index('AgentID', inplace=True)
+    return step, end
 
 
 def read_Schleyer_metadata(dir):

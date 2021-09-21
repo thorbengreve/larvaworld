@@ -15,7 +15,7 @@ substrate_dict = {
         'saccharose': 0,
         'yeast': 0,
         'agar': 16 / 1000,
-        'cornmeal': 0,
+        'cornmeal': 0
     },
     'standard': {
         'glucose': 100 / 1000,
@@ -23,7 +23,12 @@ substrate_dict = {
         'saccharose': 0,
         'yeast': 50 / 1000,
         'agar': 16 / 1000,
-        'cornmeal': 0,
+        'cornmeal': 0
+        # 'KPO4': 0.1/1000,
+        # 'Na_K_tartrate': 8/1000,
+        # 'NaCl': 0.5/1000,
+        # 'MgCl2': 0.5/1000,
+        # 'Fe2(SO4)3': 0.5/1000,
     },
     'cornmeal': {
         'glucose': 517 / 17000,
@@ -31,7 +36,7 @@ substrate_dict = {
         'saccharose': 0,
         'yeast': 0,
         'agar': 93 / 17000,
-        'cornmeal': 1716 / 17000,
+        'cornmeal': 1716 / 17000
     },
     'PED_tracker': {
         'glucose': 0,
@@ -39,8 +44,35 @@ substrate_dict = {
         'saccharose': 2 / 200,
         'yeast': 3 * 0.05 * 0.125 / 0.1,
         'agar': 500 * 2 / 200,
-        'cornmeal': 0,
+        'cornmeal': 0
+    },
+#     [1] M. E. Wosniack, N. Hu, J. Gjorgjieva, and J. Berni, “Adaptation of Drosophila larva foraging in response to changes in food distribution,” bioRxiv, p. 2021.06.21.449222, 2021.
+'cornmeal2': {
+        'glucose': 0,
+        'dextrose': 450 / 6400,
+        'saccharose': 0,
+        'yeast': 90/ 6400,
+        'agar': 42 / 6400,
+        'cornmeal': 420 / 6400
+    },
+'sucrose': {
+        'glucose': 3.42/200,
+        'dextrose': 0,
+        'saccharose': 0,
+        'yeast': 0,
+        'agar': 0.8 / 200,
+        'cornmeal': 0
     }
+# 'apple_juice': {
+#         'glucose': 0.342/200,
+#         'dextrose': 0,
+#         'saccharose': 0,
+#         'yeast': 0,
+#         'agar': 0.8 / 200,
+#         'cornmeal': 0,
+#         'apple_juice': 1.05*5/200,
+#     },
+
 }
 null_bout_dist = {
     'fit': True,
@@ -149,7 +181,8 @@ def init_dicts():
         'body': {'initial_length': 0.0045,
                  'length_std': 0.0001,
                  'Nsegs': 2,
-                 'seg_ratio': None
+                 'seg_ratio': None,
+                 'touch_sensors': False,
                  },
         'physics': {
             'torque_coef': 0.41,
@@ -174,7 +207,7 @@ def init_dicts():
                     'step_to_length_mu': 'sample',  # From D1 fit
                     'step_to_length_std': 'sample',  # From D1 fit
                     'initial_amp': None,
-                    'crawler_noise': 0.01,
+                    'noise': 0.01,
                     'max_vel_phase': 1.0
                     },
         'turner': {'mode': None,
@@ -206,8 +239,8 @@ def init_dicts():
             'perception': 'log',
             'olfactor_noise': 0.0,
             'decay_coef': 0.5},
-        'feeder': {'feeder_freq_range': [1.0, 3.0],
-                   'feeder_initial_freq': 2.0,
+        'feeder': {'freq_range': [1.0, 3.0],
+                   'initial_freq': 2.0,
                    'feed_radius': 0.1,
                    'V_bite': 0.0002},
         'memory': {'DeltadCon': 0.1,
@@ -280,10 +313,11 @@ def init_dicts():
             'wrap_mode': None
         },
         'preprocessing': {
-            'rescale_by': 1.0,
+            'rescale_by': None,
             'drop_collisions': False,
             'interpolate_nans': False,
-            'filter_f': 2.0
+            'filter_f': None,
+            'transposition':None,
         },
         'processing': {
             'types': processing_types(['angular', 'spatial', 'dispersion', 'tortuosity']),
@@ -291,7 +325,7 @@ def init_dicts():
             'tor_durs': None},
         'annotation': {'bouts': annotation_bouts(types=['stride', 'pause', 'turn']), 'track_point': None,
                        'track_pars': None, 'chunk_pars': None,
-                       'vel_par': None, 'ang_vel_par': None, 'bend_vel_par': None, 'min_ang': 0.0,
+                       'vel_par': None, 'ang_vel_par': None, 'bend_vel_par': None, 'min_ang': 0.0,'min_ang_vel': 0.0,
                        'non_chunks': False},
         'enrich_aux': {'recompute': False,
                        'mode': 'minimal',
@@ -303,11 +337,11 @@ def init_dicts():
                                 'unused']}},
         'build_conf': {
             'min_duration_in_sec': 10.0,
-            'min_end_time_in_sec': 170.0,
-            'start_time_in_sec': 160.0,
+            'min_end_time_in_sec': 0.0,
+            'start_time_in_sec': 0.0,
             'max_Nagents': 1000,
-            'save_mode': 'minimal'
-            # 'save_mode': 'semifull'
+            # 'save_mode': 'minimal'
+            'save_mode': 'semifull'
         },
         'substrate': substrate_dict['standard']
 
@@ -440,13 +474,7 @@ def init_dtypes():
                 'distribution': ['uniform'],
                 'type': list(substrate_dict.keys())
             },
-        'arena':
-            {
-                'arena_dims': (0.0, 10.0),
-                # 'arena_xdim': fun.value_list(end=10.0, steps=1000, decimals=3),
-                # 'arena_ydim': fun.value_list(end=10.0, steps=1000, decimals=3),
-                'arena_shape': ['circular', 'rectangular']
-            },
+        'arena':{'arena_dims': (0.0, 10.0),'arena_shape': ['circular', 'rectangular']},
         'life':
             {
                 'epochs': {'type': List[tuple], 'value_list': fun.value_list()},
@@ -491,7 +519,8 @@ def init_dtypes():
         'body': {'initial_length': fun.value_list(0.0, 0.01, steps=100, decimals=4),
                  'length_std': fun.value_list(0.0, 0.01, steps=100, decimals=4),
                  'Nsegs': fun.value_list(1, 12, steps=12, integer=True),
-                 'seg_ratio': List[float]  # [5 / 11, 6 / 11]
+                 'seg_ratio': List[float],  # [5 / 11, 6 / 11]
+                 'touch_sensors': bool,
                  },
         'physics': {
             'torque_coef': fun.value_list(),
@@ -513,7 +542,7 @@ def init_dtypes():
                     'step_to_length_mu': fun.value_list(),  # From D1 fit
                     'step_to_length_std': fun.value_list(),  # From D1 fit
                     'initial_amp': fun.value_list(end=2.0, steps=200),
-                    'crawler_noise': fun.value_list(),
+                    'noise': fun.value_list(),
                     'max_vel_phase': fun.value_list(end=2.0, steps=200)
                     },
         'turner': {'mode': ['', 'neural', 'sinusoidal'],
@@ -547,8 +576,8 @@ def init_dtypes():
             'perception': ['log', 'linear'],
             'olfactor_noise': fun.value_list(),
             'decay_coef': fun.value_list(end=2.0, steps=200)},
-        'feeder': {'feeder_freq_range': (0.0, 4.0),
-                   'feeder_initial_freq': fun.value_list(end=4.0, steps=400),
+        'feeder': {'freq_range': (0.0, 4.0),
+                   'initial_freq': fun.value_list(end=4.0, steps=400),
                    'feed_radius': fun.value_list(start=0.01, end=1.0, steps=1000, decimals=2),
                    'V_bite': fun.value_list(start=0.0001, end=0.01, steps=1000, decimals=4)},
         'memory': {'DeltadCon': float,
@@ -615,7 +644,8 @@ def init_dtypes():
             'rescale_by': fun.value_list(end=100.0, steps=100000, decimals=3),
             'drop_collisions': bool,
             'interpolate_nans': bool,
-            'filter_f': fun.value_list(end=10.0, steps=10000, decimals=3)
+            'filter_f': fun.value_list(end=10.0, steps=10000, decimals=3),
+            'transposition':['', 'origin', 'arena', 'center'],
         },
         'processing': {
             'types': processing_types(),
@@ -627,6 +657,7 @@ def init_dtypes():
                        'track_pars': List[str], 'chunk_pars': List[str],
                        'vel_par': str, 'ang_vel_par': str, 'bend_vel_par': str,
                        'min_ang': fun.value_list(end=180.0, steps=1900, decimals=1),
+                       'min_ang_vel': fun.value_list(end=1000.0, steps=10001, decimals=1),
                        'non_chunks': bool},
         'enrich_aux': {'recompute': bool,
                        'mode': ['minimal', 'full'],
@@ -740,6 +771,7 @@ def init_vis_dtypes():
         'draw_centroid': bool,
         'draw_midline': bool,
         'draw_contour': bool,
+        'draw_sensors': bool,
         'trails': bool,
         'trajectory_dt': fun.value_list(0.0, 100.0, steps=1000, decimals=1),
     }
@@ -780,6 +812,7 @@ def init_null_vis():
         'draw_centroid': False,
         'draw_midline': True,
         'draw_contour': True,
+        'draw_sensors': True,
         'trails': False,
         'trajectory_dt': 0.0,
     }
@@ -815,7 +848,8 @@ def init_shortcuts():
         'draw_head': 'h',
         'draw_centroid': 'e',
         'draw_midline': 'm',
-        'draw_contour': 'c'
+        'draw_contour': 'c',
+        'draw_sensors': 'j',
     }
 
     inspect = {

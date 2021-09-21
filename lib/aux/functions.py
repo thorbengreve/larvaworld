@@ -21,6 +21,7 @@ from matplotlib import cm, colors
 from pypet import ParameterGroup, Parameter
 from scipy.signal import butter, sosfiltfilt, spectrogram
 import scipy.stats as st
+from scipy.spatial import ConvexHull
 from shapely.geometry import Point
 import scipy as sp
 import matplotlib.pyplot as plt
@@ -410,7 +411,7 @@ def compute_centroid(points):
 
 
 def inside_polygon(points, tank_polygon):
-    return all([tank_polygon.contains(Point(x, y)) for x, y in points])
+    return [tank_polygon.contains(Point(x, y)) for x, y in points]
     # # // p is your point, p.x is the x coord, p.y is the y coord
     # Xmin, Xmax, Ymin, Ymax = space_edges_for_screen
     # # x, y = point
@@ -759,11 +760,8 @@ def match_larva_ids2(s, dl=None, max_t=5 * 60, max_s=20, pars=None, e=None, min_
     return ss
 
 
-def match_larva_ids(s, e, pars=None, wl=100, wt=1, ws=0.5, max_error=600, max_counter=10, Nidx=100, **kwargs):
-    # wl, wt, ws = 100, 1, 0.5
-    # max_error = 600
-    # max_counter = 10
-    # Nidx=100
+def match_larva_ids(s, e, pars=None, wl=100, wt=1, ws=0.5, max_error=600, max_counter=10, Nidx=20, **kwargs):
+
 
     def prior(maxs, last_xy, ls, idx):
         pp = maxs.nsmallest(idx).iloc[[-1]]
@@ -773,14 +771,13 @@ def match_larva_ids(s, e, pars=None, wl=100, wt=1, ws=0.5, max_error=600, max_co
         return [id0, t0, xy0, l0]
 
     def next(id1, mins, first_xy, ls):
-        t1, xy1, l1 = mins[id1], first_xy[id1], ls[id1]
-        return [id1, t1, xy1, l1]
+        return [id1, mins[id1], first_xy[id1], ls[id1]]
 
     def eval_c(c0, c1):
         tt = c1[1] - c0[1]
-        ll = np.abs(c1[3] - c0[3])
         if tt <= 0:
             return max_error * 2
+        ll = np.abs(c1[3] - c0[3])
         dd = np.sqrt(np.sum((c1[2] - c0[2]) ** 2))
         return wt * tt + wl * ll + ws * dd
 
@@ -798,30 +795,29 @@ def match_larva_ids(s, e, pars=None, wl=100, wt=1, ws=0.5, max_error=600, max_co
         return np.array([(c0[0], id1), error])
 
     def step(ls, ss, ids, mins, maxs, first_xy, last_xy, idx):
-        res = np.array([match(ids, mins, maxs, first_xy, last_xy, ls, idx + i) for i in range(Nidx)])
-        error = res[:, 1].min()
-        id0, id1 = res[np.argmin(res[:, 1]), 0]
-
+        r = np.array([match(ids, mins, maxs, first_xy, last_xy, ls, idx + i) for i in range(Nidx)])
+        (id0, id1), error =r[r[:, 1] == r[:, 1].min()][0]
         if error < max_error:
             ss.rename(index={id0: id1}, inplace=True)
             ls[id1] = ss['spinelength'].loc[id1].dropna().mean()
             ls.drop([id0], inplace=True)
-            ids, mins, maxs, first_xy, last_xy = update_extrema({id0: id1}, ids, mins, maxs, first_xy, last_xy)
+            ids, mins, maxs, first_xy, last_xy = update_extrema(id0,id1, ids, mins, maxs, first_xy, last_xy)
+            # ids, mins, maxs, first_xy, last_xy = update_extrema2({id0: id1}, ids, mins, maxs, first_xy, last_xy)
         return ls, ss, ids, mins, maxs, first_xy, last_xy, error
 
     ls = e['length']
     if pars is None:
         pars = s.columns.values.tolist()
-    ss = s.dropna().reset_index(level='Step', drop=False)
+    ss = s.reset_index(level='Step', drop=False)
+    # ss = s.dropna().reset_index(level='Step', drop=False)
     ss['Step'] = ss['Step'].values.astype(int)
     ids, mins, maxs, first_xy, last_xy = get_extrema(ss, pars)
     counter = 0
-    error = 0
     idx = 1
     while counter < max_counter:
         ls, ss, ids, mins, maxs, first_xy, last_xy, error = step(ls, ss, ids, mins, maxs, first_xy, last_xy, idx)
 
-        print(counter, idx, len(ids), int(error))
+        print(len(ids), int(error))
         if error >= max_error:
             idx += Nidx
             if idx >= len(ids):
@@ -948,8 +944,16 @@ def get_extrema(ss, pars):
         last_xy[id] = ss[pars].xs(id).dropna().values[-1, :]
     return ids, mins, maxs, first_xy, last_xy
 
+def update_extrema(id1, id2, ids, mins, maxs, first_xy, last_xy):
+    mins[id2], first_xy[id2] = mins[id1], first_xy[id1]
+    del mins[id1]
+    del maxs[id1]
+    del first_xy[id1]
+    del last_xy[id1]
+    ids.remove(id1)
+    return ids, mins, maxs, first_xy, last_xy
 
-def update_extrema(pairs, ids, mins, maxs, first_xy, last_xy):
+def update_extrema2(pairs, ids, mins, maxs, first_xy, last_xy):
     for id2 in pairs.values():
         n_ids = [id for id in pairs.keys() if pairs[id] == id2] + [id2]
         n_mins = [mins[id] for id in n_ids]
@@ -1253,6 +1257,16 @@ def weighted_mean(array, Nmax):
     # print(m)
     return m
 
+def merge_dicts(dict_list) :
+    # import collections
+    super_dict = {}
+    # super_dict = collections.defaultdict(set)
+    for d in dict_list:
+        for k, v in d.items():  # d.items() in Python 3+
+            super_dict[k]=v
+            # super_dict[k].add(v)
+    return super_dict
+
 
 def load_dicts(files=None, pref=None, suf=None, folder=None, extension='txt', use_pickle=True):
     if files is None:
@@ -1363,7 +1377,7 @@ def invert_color(col, return_self=False):
     else :
         return col,col2
 
-def value_list(start=0.0,end=1.0, integer=False, steps=101, decimals=2, allow_None=False):
+def value_list(start=0.0,end=1.0, integer=False, steps=1001, decimals=3, allow_None=False):
     a= np.round(np.linspace(start, end, steps), decimals)
     if integer :
         a=a.astype(int)
@@ -1419,3 +1433,64 @@ def replace_in_dict(d0, replace_d, inverse=False) :
         elif v in list(replace_d.keys()):
             d[k] = replace_d[v]
     return d
+
+def convex_hull(xs=None, ys=None, N=None):
+    Nrows, Ncols = xs.shape
+    xs = [xs[i][~np.isnan(xs[i])] for i in range(Nrows)]
+    ys = [ys[i][~np.isnan(ys[i])] for i in range(Nrows)]
+    ps = [np.vstack((xs[i], ys[i])).T for i in range(Nrows)]
+    xxs = np.zeros((Nrows, N))
+    xxs[:] = np.nan
+    yys = np.zeros((Nrows, N))
+    yys[:] = np.nan
+
+    for i, p in enumerate(ps) :
+        if len(p) > 0:
+            b = p[ConvexHull(p).vertices]
+            s = np.min([b.shape[0],N])
+            xxs[i,:s]=b[:s,0]
+            yys[i,:s]=b[:s,1]
+    return xxs, yys
+
+def convex_hull2(xs=None, ys=None, N=None):
+    Nrows, Ncols = xs.shape
+
+    xs=[xs[i][~np.isnan(xs[i])] for i in range(Nrows)]
+    ys=[ys[i][~np.isnan(ys[i])] for i in range(Nrows)]
+    points = [np.vstack((xs[i], ys[i])).T for i in range(Nrows)]
+    vertices=[]
+    for i in range(Nrows) :
+        print(i)
+        a=points[i]
+        b = np.zeros((N, 2))
+        b[:]=np.nan
+        if len(a)>0:
+            bb=a[ConvexHull(a).vertices]
+            s=bb.shape[0]
+            if s>=N :
+                b=bb[:N,:]
+            else:
+                b[:s,:]=bb
+        vertices.append(b)
+    vertices =np.array(vertices)
+
+
+    # vertices = np.array([points[i][ConvexHull(points[i]).vertices] for i in range(Nrows)])
+    xxs = np.array([vertices[i][:, 0] for i in range(Nrows)])
+    yys = np.array([vertices[i][:, 1] for i in range(Nrows)])
+    # Nmin = np.min([vertices[i].shape[0] for i in range(Nrows)])
+    # xxs = np.array([xxs[i][:Nmin] for i in range(Nrows)])
+    # yys = np.array([yys[i][:Nmin] for i in range(Nrows)])
+    # print(Nmin)
+    return xxs, yys
+
+def sign_changes(df, col) :
+    a = df[col].values
+    u = np.sign(df[col])
+    m = np.flatnonzero(u.diff().abs().eq(2))
+
+    g = np.stack([m - 1, m], axis=1)
+    v = np.abs(a[g]).argmin(1)
+
+    res=df.iloc[g[np.arange(g.shape[0]), v]]
+    return res

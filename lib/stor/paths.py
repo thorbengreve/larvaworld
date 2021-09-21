@@ -11,6 +11,8 @@ def get_parent_dir():
 
 
 DataFolder = f'{get_parent_dir()}/data'
+GuiFolder = f'{get_parent_dir()}/lib/gui'
+GuiTest = f'{GuiFolder}/gui_speed_test.csv'
 
 # ConfFolder = f'{DataFolder}/configurations'
 SimFolder = f'{DataFolder}/SimGroup'
@@ -39,6 +41,7 @@ conf_paths = {
     'Env': f'{ConfFolder}/EnvConfs.txt',
     'Par': f'{ConfFolder}/ParConfs.txt',
     'Exp': f'{ConfFolder}/ExpConfs.txt',
+    'ExpGroup': f'{ConfFolder}/ExpGroupConfs.txt',
     'Essay': f'{ConfFolder}/EssayConfs.txt',
     'Model': f'{ConfFolder}/ModelConfs.txt',
     'Batch': f'{ConfFolder}/BatchConfs.txt',
