@@ -1,3 +1,4 @@
+import subprocess
 from ast import literal_eval
 from pydoc import locate
 from typing import List, Tuple, Union, Type
@@ -32,6 +33,7 @@ b6_kws = {'font': ('size', 6),
           'size': (6, 1)}
 b12_kws = {'font': ('size', 6),
            'size': (12, 1)}
+spin_size={'size' :  (4, 1)}
 
 
 def t_kws(w, h=1):
@@ -156,3 +158,4 @@ def collapse(layout, key, visible=True):
     :rtype: sg.pin
     """
     return sg.pin(sg.Col(layout, key=key, visible=visible))
+

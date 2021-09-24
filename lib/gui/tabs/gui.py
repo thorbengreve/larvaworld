@@ -24,21 +24,31 @@ matplotlib.use('TkAgg')
 
 class LarvaworldGui:
 
-    def __init__(self, tabs=None):
+    def __init__(self, tabs=None, batch_thread=None):
         # s0 = time.time()
+        self.run_externally = {'sim':False, 'batch':True}
         self.tab_dict = {
             'introduction': (IntroTab, None),
-            'tutorials': (TutorialTab, None),
             'larva-model': (ModelTab, 'Model', 'model_conf'),
-            'environment': (EnvTab, 'Env', 'env_conf'),
             'life-history': (LifeTab, 'Life', 'life'),
+            'environment': (EnvTab, 'Env', 'env_conf'),
             'simulation': (SimTab, 'Exp', 'exp_conf'),
-            'essay': (EssayTab, 'Essay', 'essay_conf'),
             'batch-run': (BatchTab, 'Batch', 'batch_conf'),
-            'analysis': (AnalysisTab, None, None),
+            'essay': (EssayTab, 'Essay', 'essay_conf'),
             'import': (ImportTab, 'Group', None),
+            'analysis': (AnalysisTab, None, None),
             'videos': (VideoTab, None, None),
+            'tutorials': (TutorialTab, None),
             'settings': (SettingsTab, None, None)
+        }
+        self.tabgroups={
+            'introduction':['introduction'],
+            'models':['larva-model', 'life-history'],
+            'environment':['environment'],
+            'data':['import', 'analysis'],
+            'simulations':['simulation', 'batch-run', 'essay'],
+            'resources':['tutorials', 'videos'],
+            'settings':['settings'],
         }
 
         if tabs is None:
@@ -46,6 +56,7 @@ class LarvaworldGui:
         # sg.change_look_and_feel('Dark Blue 3')
         sg.theme('LightGreen')
         self.background_color = None
+        self.batch_thread = batch_thread
         self.terminal = gui_terminal()
         # s1 = time.time()
         layout, self.collapsibles, self.graph_lists, self.dicts, self.tabs = self.build(tabs)
@@ -63,6 +74,7 @@ class LarvaworldGui:
         while True:
 
             e, v = self.window.read()
+            # print(e)
             if e in (None, 'Exit'):
                 self.window.close()
                 break
@@ -91,6 +103,7 @@ class LarvaworldGui:
 
     def build(self, tabs):
         ls, cs, ds, gs, ts = [], {}, {}, {}, {}
+        dic={}
         for n in tabs:
             ii=self.tab_dict[n]
             ts[n] = ii[0](name=n, gui=self, conftype=ii[1])
@@ -98,13 +111,19 @@ class LarvaworldGui:
             cs.update(c)
             ds.update(d)
             gs.update(g)
-            ls.append(sg.Tab(n, l, background_color=self.background_color, key=f'{n} TAB', ))
+            dic[n]=sg.Tab(n, l, background_color=self.background_color, key=f'{n} TAB')
+            ls.append(dic[n])
 
-        l_tabs = sg.TabGroup([ls], key='ACTIVE_TAB', tab_location='topleft', selected_title_color='darkblue',
-                             font=("Helvetica", 13, "normal"),
-                             # size=gui.col_size(y_frac=0.7),
-                             title_color='grey', selected_background_color=None,
-                             tab_background_color='lightgrey', background_color=None)
+        tab_kws={'font' : ("Helvetica", 13, "normal"), 'selected_title_color': 'darkblue', 'title_color': 'grey', 'tab_background_color' :'lightgrey' }
+        # for nn, ks in self.tabgroups.items():
+        #     if len(ks)>4:
+        #         ll=sg.TabGroup([[dic[k]] for k in ks], key=f'{nn} GROUPTAB', tab_location='topleft', **tab_kws)
+        #         ls.append(ll)
+        #     else :
+        #         ls.append(dic[nn])
+
+
+        l_tabs = sg.TabGroup([ls], key='ACTIVE_TAB', tab_location='topleft',**tab_kws)
 
         l0 = [[sg.Pane([sg.vtop(l_tabs), sg.vbottom(self.terminal)], handle_size=30)]]
         return l0, cs, ds, gs, ts
@@ -112,7 +131,7 @@ class LarvaworldGui:
     def get_vis_kwargs(self, v, **kwargs):
         c=self.collapsibles
         w=self.window
-        vis_kwargs=c['Visualization'].get_dict(v, w) if 'Visualization' in list(
+        vis_kwargs=c['visualization'].get_dict(v, w) if 'visualization' in list(
             c.keys()) else dtypes.get_dict('visualization', **kwargs)
         return vis_kwargs
 

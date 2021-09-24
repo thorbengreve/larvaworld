@@ -163,7 +163,7 @@ def set_kwargs(dic, title='Arguments', type_dict=None, **kwargs):
     from lib.gui.tabs.gui import check_toggles
     from lib.gui.aux.elements import SectionDict
     sec_dict = SectionDict(name=title, dict=dic, type_dict=type_dict)
-    l = sec_dict.init_section()
+    l = sec_dict.layout
     l.append([sg.Ok(), sg.Cancel()])
     w = sg.Window(title, l, **w_kws, **kwargs)
     while True:
@@ -252,8 +252,7 @@ def import_window(datagroup_id,raw_dic):
         vertical_scroll_only=True, scrollable=True, expand_y=True, vertical_alignment='top',
         size=col_size(y_frac=0.4, win_size=w_size))
 
-    s1 = CollapsibleDict('build_conf', default=True, disp_name='Configuration', text_kws=t_kws(24),
-                         value_kws=t_kws(8))
+    s1 = CollapsibleDict('build_conf', default=True, disp_name='Configuration',text_kws=t_kws(8))
     c = {}
     for s in [s1]:
         c.update(**s.get_subdicts())
@@ -293,6 +292,7 @@ def import_window(datagroup_id,raw_dic):
                     'group_id': gID,
                     **conf}
                 w.close()
+                # print(conf)
                 from lib.stor.managing import build_dataset
                 source_ids=list(raw_dic.keys())
                 sources=list(raw_dic.values())
