@@ -3,9 +3,9 @@ import math
 import numpy as np
 from shapely.geometry import LineString, Polygon, Point
 
-
+import lib.aux.ang_aux
+import lib.aux.sim_aux
 from lib.model.body.body import LarvaBody
-import lib.aux.functions as fun
 
 
 class BodyManager(LarvaBody):
@@ -23,6 +23,7 @@ class BodySim(BodyManager):
                  lin_damping=1.0, ang_damping=1.0, **kwargs):
         self.lin_damping = lin_damping
         self.ang_damping = ang_damping
+
         super().__init__(model=model, pos=self.pos, orientation=orientation, density=density, **kwargs)
 
         self.body_spring_k = body_spring_k
@@ -69,8 +70,7 @@ class BodySim(BodyManager):
         self.torque_coef = torque_coef
         self.backward_motion = True
 
-        k = 0.95
-        self.tank_polygon = Polygon(self.model.tank_shape * k)
+
 
         # from lib.conf.par import pargroups
         # from lib.conf.par import AgentCollector
@@ -91,7 +91,7 @@ class BodySim(BodyManager):
         #     # Default mode : apply torque
         #     # self.get_head()._body.ApplyTorque(self.torque, wake=True)
         #     pass
-        if self.model.physics_engine:
+        if self.model.Box2D:
             if self.ang_mode == 'velocity':
                 ang_vel = self.ang_activity * self.ang_vel_coef
                 ang_vel = self.compute_ang_vel(v=ang_vel, z=0)
@@ -167,6 +167,8 @@ class BodySim(BodyManager):
         for o in self.carried_objects:
             o.pos = self.pos
 
+        # print(self.unique_id, self.cum_dst)
+
     def compute_new_lin_vel_vector(self, target_segment):
         # Option 1 : Create the linear velocity from orientation.
         # This was the default. But it seems because of numerical issues it doesn't generate the expected vector,
@@ -228,13 +230,13 @@ class BodySim(BodyManager):
     def restore_body_bend(self):
         self.compute_spineangles()
         d, l = self.dst, self.sim_length
-        if not self.model.physics_engine:
+        if not self.model.Box2D:
             if self.Nsegs == 2:
-                self.spineangles[0] = fun.restore_bend_2seg(self.spineangles[0], d, l,
-                                                            correction_coef=self.bend_correction_coef)
+                self.spineangles[0] = lib.aux.ang_aux.restore_bend_2seg(self.spineangles[0], d, l,
+                                                                        correction_coef=self.bend_correction_coef)
             else:
-                self.spineangles = fun.restore_bend(self.spineangles, d, l, self.Nsegs,
-                                                    correction_coef=self.bend_correction_coef)
+                self.spineangles = lib.aux.ang_aux.restore_bend(self.spineangles, d, l, self.Nsegs,
+                                                                correction_coef=self.bend_correction_coef)
         self.compute_body_bend()
 
     # def set_lin_activity(self, value):
@@ -246,7 +248,7 @@ class BodySim(BodyManager):
 
     def update_trajectory(self):
         last_pos = self.trajectory[-1]
-        if self.model.physics_engine:
+        if self.model.Box2D:
             self.pos = self.get_global_midspine_of_body()
         self.dst = np.sqrt(np.sum(np.array(self.pos - last_pos) ** 2))
         self.cum_dst += self.dst
@@ -259,7 +261,7 @@ class BodySim(BodyManager):
     def step_no_physics(self, lin_vel, ang_vel):
 
         # print()
-        # print(np.round(fun.compute_bearing2source([self.pos[0]], [self.pos[1]],  np.rad2deg(self.get_head().get_orientation()), loc=(0.2,0.2), in_deg=True))[0])
+        # print(np.round(fun.comp_bearing([self.pos[0]], [self.pos[1]],  np.rad2deg(self.get_head().get_orientation()), loc=(0.2,0.2), in_deg=True))[0])
         # self.body_bend += self.dt * ang_velocity
         # self.body_bend = np.clip(self.body_bend, a_min=-np.pi, a_max=np.pi)
 
@@ -277,6 +279,7 @@ class BodySim(BodyManager):
         head = self.get_head()
         hp0, o0 = head.get_pose()
         hr0 = self.get_global_rear_end_of_head()
+        # print(self.unique_id)
 
 
         border_collision = any([l.intersects(self.segs[0].get_shape()) for l in self.model.border_lines]) if len(self.model.border_lines) > 0 else False
@@ -294,15 +297,16 @@ class BodySim(BodyManager):
         d = lin_vel * dt
         ang_vel0=np.clip(ang_vel, a_min=-np.pi - a0 / dt, a_max=(np.pi - a0) / dt)
 
-        def avoid_border(ang_vel, counter, dd=0.001):
-            if not self.touch_sensors :
+        def avoid_border(ang_vel, counter, dd=0.01):
+
+            if self.touch_sensors is None or any([ss not in self.get_sensors() for ss in ['L_front', 'R_front']]):
                 counter += 1
                 ang_vel *= -(1 + dd * counter)
                 return ang_vel, counter
             else :
                 s=self.sim_length/1000
                 L,R=self.get_sensor_position('L_front'), self.get_sensor_position('R_front')
-                Ld, Rd=self.tank_polygon.exterior.distance(Point(L)), self.tank_polygon.exterior.distance(Point(R))
+                Ld, Rd=self.model.tank_polygon.exterior.distance(Point(L)), self.model.tank_polygon.exterior.distance(Point(R))
                 Ld, Rd=Ld/s,Rd/s
                 LRd=Ld-Rd
                 ang_vel += dd * LRd
@@ -323,23 +327,18 @@ class BodySim(BodyManager):
                 hr1 = None
                 hp1 = hp0 + dxy
                 hf1 = hp1 + k * (self.sim_length / 2)
-            hf1_ok, hp1_ok = fun.inside_polygon(points=[hf1, hp1], tank_polygon=self.tank_polygon)
+            hf1_ok, hp1_ok = lib.aux.sim_aux.inside_polygon(points=[hf1, hp1], tank_polygon=self.model.tank_polygon)
             in_tank = all([hf1_ok, hp1_ok])
             return in_tank, o1, hr1, hp1
 
         in_tank, o1, hr1, hp1 = check_in_tank(ang_vel, o0, d, hr0)
-        # in_tank=False
         counter = -1
-        # ang_vel*=-1
         while not in_tank :
             ang_vel, counter=avoid_border(ang_vel, counter)
-            # print(self.pos)
-            # print(counter, ang_vel)
-            # print(counter, Ld-Rd, ang_vel)
-            # counter+=1
-            # ang_vel*=-(1+0.001*counter)
             in_tank, o1, hr1, hp1 = check_in_tank(ang_vel, o0, d, hr0)
-        if counter>=0:
+
+        if counter>0:
+            # print(counter)
             ang_vel = np.abs(ang_vel)*np.sign(ang_vel0)
         head.set_pose(hp1, o1)
         head.update_vertices(hp1, o1)
@@ -386,7 +385,7 @@ class BodySim(BodyManager):
 
     def compute_spineangles(self):
         seg_ors = [seg.get_orientation() for seg in self.segs]
-        self.spineangles = [fun.angle_dif(seg_ors[i], seg_ors[i + 1], in_deg=False) for i in range(self.Nangles)]
+        self.spineangles = [lib.aux.ang_aux.angle_dif(seg_ors[i], seg_ors[i + 1], in_deg=False) for i in range(self.Nangles)]
 
     def compute_body_bend(self):
         self.body_bend = sum(self.spineangles[:self.Nangles_b])

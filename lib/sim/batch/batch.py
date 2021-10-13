@@ -13,11 +13,11 @@ import time
 import numpy as np
 from pypet import Environment, load_trajectory, pypetconstants
 
+from lib.conf.base.dtypes import null_dict
 from lib.sim.batch.aux import config_traj, prepare_traj
-from lib.sim.batch.functions import single_run, prepare_batch
+from lib.sim.batch.functions import single_run
 
-import lib.stor.paths as paths
-import lib.conf.dtype_dicts as dtypes
+from lib.conf.base import paths
 
 ''' Default batch run.
 Arguments :
@@ -101,11 +101,11 @@ def get_batch_env(batch_id, batch_type, dir_path, parent_dir_path, exp, params, 
 
 
 def _batch_run(batch_type='unnamed', batch_id='template', space=None, exp=None, params=None, post_kws={}, exp_kws={},
-               runfunc=single_run, procfunc=None, postfunc=None, finfunc=None, optimization=None,ncores=8,
+               runfunc=single_run, procfunc=None, postfunc=None, finfunc=None, optimization=None,ncores=8,proc_kws={},
                multiproc=True, resumable=False, overwrite_file=False, save_hdf5=False, batch_methods=None):
-
+    # print(exp_kws)
     s0 = time.time()
-    parent_dir_path = f'{paths.BatchRunFolder}/{batch_type}'
+    parent_dir_path = f'{paths.path("BATCH")}/{batch_type}'
     dir_path = f'{parent_dir_path}/{batch_id}'
     env_kws = {
         'file_title': batch_type,
@@ -135,9 +135,10 @@ def _batch_run(batch_type='unnamed', batch_id='template', space=None, exp=None, 
         'save_hdf5': save_hdf5,
         'exp_kws': {**exp_kws,
                     'save_to': dir_path,
-                    'vis_kwargs': dtypes.get_dict('visualization'),
+                    'vis_kwargs': null_dict('visualization', mode=None),
                     'collections': exp['collections']
-                    }
+                    },
+        'proc_kws':proc_kws
     }
 
     def test_batch():
@@ -165,7 +166,6 @@ def _batch_run(batch_type='unnamed', batch_id='template', space=None, exp=None, 
 
 if __name__ == "__main__":
     batch_type = 'odor-preference'
-    from lib.conf.conf import expandConf
 
     # conf = expandConf(batch_type, 'Batch')
     #

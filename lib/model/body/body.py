@@ -5,9 +5,10 @@ from shapely.ops import cascaded_union
 # TODO Find a way to use this. Now if changed everything is scal except locomotion. It seems that
 #  ApplyForceToCenter function does not scale
 # _world_scale = np.int(100)
-
-import lib.aux.functions as fun
+import lib.aux.dictsNlists
+import lib.aux.sim_aux
 from lib.model.body.segment import Box2DPolygon, DefaultSegment
+
 
 
 class LarvaBody:
@@ -68,8 +69,10 @@ class LarvaBody:
 
         self.sensors = []
         self.define_sensor('olfactor', (1, 0))
-        if self.touch_sensors:
-            self.add_touch_sensors()
+        if self.touch_sensors is not None:
+            self.add_touch_sensors(self.touch_sensors)
+
+
         # print(self.sensors)
 
     @ property
@@ -97,8 +100,6 @@ class LarvaBody:
 
     def adjust_body_vertices(self):
         self.radius = self.sim_length / 2
-        # if not self.model.space_in_mm :
-        #     self.radius*=1000
         self.seg_lengths = [self.sim_length * r for r in self.seg_ratio]
         self.seg_vertices = [v * self.sim_length for v in self.base_seg_vertices]
         for vec, seg in zip(self.seg_vertices, self.segs):
@@ -133,7 +134,8 @@ class LarvaBody:
         for sensor_dict in self.sensors:
             sensor_dict['local_pos'] = sensor_dict['base_local_pos'] * self.sim_length
 
-    def get_olfactor_position(self):
+    @ property
+    def olfactor_pos(self):
         return self.get_global_front_end_of_head()
 
     def define_sensor(self, sensor, pos_on_body):
@@ -150,6 +152,7 @@ class LarvaBody:
         self.sensors.append(sensor_dict)
 
     def get_sensor(self, sensor):
+        # print(sensor)
         for sensor_dict in self.sensors:
             if sensor_dict['sensor'] == sensor:
                 return sensor_dict
@@ -159,14 +162,15 @@ class LarvaBody:
 
     def get_sensor_position(self, sensor):
         d = self.get_sensor(sensor)
+        # print(d)
         return self.segs[d['seg_idx']].get_world_point(d['local_pos'])
 
     def generate_seg_shapes(self, Nsegs, width_to_length_proportion, density, interval, seg_ratio):
         self.density = density / (1 - 2 * (Nsegs - 1) * interval)
         w = width_to_length_proportion / 2
         points = np.array([[0.9, w], [0.05, w]])
-        xy0 = fun.body(points)
-        ps = fun.segment_body(Nsegs, xy0, seg_ratio=seg_ratio, centered=True)
+        xy0 = lib.aux.sim_aux.body(points)
+        ps = lib.aux.sim_aux.segment_body(Nsegs, xy0, seg_ratio=seg_ratio, centered=True)
         seg_vertices = [np.array([p]) * 1 for p in ps]
         return seg_vertices
 
@@ -183,7 +187,7 @@ class LarvaBody:
                           position[1] + (-i + (N - 1) / 2) * ls_y] for i in range(N)]
 
         segs = []
-        if self.model.physics_engine:
+        if self.model.Box2D:
             physics_pars = {'density': self.density,
                             'friction': 0.01,
                             'restitution': 0.0,
@@ -214,7 +218,7 @@ class LarvaBody:
                                      seg_vertices=self.seg_vertices[i],
                                      color=self.seg_colors[i])
                 segs.append(seg)
-            # print(position)
+            # print(self.unique_id, fun.inside_polygon(points=[position], tank_polygon=self.tank_polygon))
             self.model.space.place_agent(self, position)
         return segs
 
@@ -339,42 +343,42 @@ class LarvaBody:
                            filled=True, color=(255, 0, 0), width=.1)
 
     def draw(self, viewer):
+        m=self.model
         c, r = self.get_head().color, self.radius
+        h_pos=self.get_global_front_end_of_head()
+        pos=self.get_position()
+        mid = [self.get_global_front_end_of_seg(i) for i in range(self.Nsegs)] + [self.get_global_rear_end_of_body()]
 
-        if not self.model.draw_contour:
-            self.contour = self.set_contour()
-            viewer.draw_polygon(self.contour, c, True, r / 5)
-        else:
-            # viewer.draw_polygon(self.get_shape().boundary.coords, c, True, r / 5)
+        if m.draw_contour:
             for seg in self.segs:
                 seg.draw(viewer)
-        if self.model.draw_head:
-            viewer.draw_circle(self.get_global_front_end_of_head(), r / 2, (255, 0, 0), True, r / 6)
+        else:
+            self.contour = self.set_contour()
+            viewer.draw_polygon(self.contour, c, True, r / 5)
 
-        if self.model.draw_midline:
-            points = [self.get_global_front_end_of_seg(i) for i in range(self.Nsegs)] + [self.get_global_rear_end_of_body()]
-            viewer.draw_polyline(points, color=(0, 0, 255), closed=False, width=r / 10)
-            for i, p in enumerate(points):
-                c = 255 * i / (len(points) - 1)
-                color = (c, 255 - c, 0)
-                viewer.draw_circle(p, r / 10, color, True, r / 20)
+        if m.draw_head:
+            draw_body_head(viewer, h_pos, r)
 
-        if self.model.draw_centroid:
-            viewer.draw_circle(self.get_position(), r / 2, self.default_color, True, r / 3)
+        if m.draw_midline:
+            draw_body_midline(viewer, mid, r)
+
+        if m.draw_centroid:
+            draw_body_centroid(viewer, pos, r, c)
+
 
         # if True:
-        if self.model.draw_sensors:
+        if m.draw_sensors:
             self.draw_sensors(viewer)
 
         if self.selected:
-            cc = self.model.selection_color
-            try:
-                viewer.draw_polygon(self.get_shape().boundary.coords, cc, False, r / 10)
-                # for seg in self.segs:
-                #     for i, vertices in enumerate(seg.vertices):
-                #         viewer.draw_polygon(vertices, c, False, r)
-            except:
-                viewer.draw_circle(self.get_position(), r, cc, False, r/5)
+            draw_selected_body(viewer, pos, self.get_shape().boundary.coords, r, m.selection_color)
+            # try:
+            #     viewer.draw_polygon(self.get_shape().boundary.coords, cc, False, r / 10)
+            #     # for seg in self.segs:
+            #     #     for i, vertices in enumerate(seg.vertices):
+            #     #         viewer.draw_polygon(vertices, c, False, r)
+            # except:
+            #     viewer.draw_circle(pos, r, cc, False, r/5)
 
         # for sigma in self.get_sensors() :
         #     self.draw_sensor(viewer, sigma)
@@ -471,8 +475,8 @@ class LarvaBody:
 
     def set_contour(self, Ncontour=22):
         vertices = [np.array(seg.vertices[0]) for seg in self.segs]
-        l_side = fun.flatten_list([v[:int(len(v) / 2)] for v in vertices])
-        r_side = fun.flatten_list([np.flip(v[int(len(v) / 2):], axis=0) for v in vertices])
+        l_side = lib.aux.dictsNlists.flatten_list([v[:int(len(v) / 2)] for v in vertices])
+        r_side = lib.aux.dictsNlists.flatten_list([np.flip(v[int(len(v) / 2):], axis=0) for v in vertices])
         r_side.reverse()
         total_contour = l_side + r_side
         if len(total_contour) > Ncontour:
@@ -483,17 +487,23 @@ class LarvaBody:
         # contour = contour[ConvexHull(contour).vertices].tolist()
         return contour
 
-    def add_touch_sensors(self):
+    def add_touch_sensors(self, N=8):
         y = 0.1
         x_f, x_m, x_r = 0.75, 0.5, 0.25
-        self.define_sensor('M_front', (1.0, 0.0))
-        self.define_sensor('L_front', (x_f, y))
-        self.define_sensor('R_front', (x_f, -y))
-        self.define_sensor('L_mid', (x_m, y))
-        self.define_sensor('R_mid', (x_m, -y))
-        self.define_sensor('L_rear', (x_r, y))
-        self.define_sensor('R_rear', (x_r, -y))
-        self.define_sensor('M_rear', (0.0, 0.0))
+        if N==8:
+            self.define_sensor('M_front', (1.0, 0.0))
+            self.define_sensor('L_front', (x_f, y))
+            self.define_sensor('R_front', (x_f, -y))
+            self.define_sensor('L_mid', (x_m, y))
+            self.define_sensor('R_mid', (x_m, -y))
+            self.define_sensor('L_rear', (x_r, y))
+            self.define_sensor('R_rear', (x_r, -y))
+            self.define_sensor('M_rear', (0.0, 0.0))
+        elif N==2:
+            self.define_sensor('R_mid', (x_m, -y))
+            self.define_sensor('M_rear', (0.0, 0.0))
+        elif N == 0:
+            pass
 
     def set_head_edges(self):
         self.local_rear_end_of_head = (np.min(self.seg_vertices[0][0], axis=0)[0], 0)
@@ -511,3 +521,44 @@ class LarvaBody:
             seg.set_position(tuple(new_p))
             seg.update_vertices(new_p, o)
         self.pos = self.get_global_midspine_of_body()
+
+def draw_body_midline(viewer, midline_xy, radius) :
+    try:
+        mid=midline_xy
+        r=radius
+        if not any(np.isnan(np.array(mid).flatten())) :
+            Nmid=len(mid)
+            viewer.draw_polyline(mid, color=(0, 0, 255), closed=False, width=r / 10)
+            for i, xy in enumerate(mid):
+                c = 255 * i / (Nmid - 1)
+                viewer.draw_circle(xy, r / 10, color=(c, 255 - c, 0), width=r / 20)
+    except :
+        pass
+
+def draw_body_contour(viewer, contour_xy, radius) :
+    try :
+        pass
+    except :
+        pass
+
+def draw_body_centroid(viewer, pos, radius, color) :
+    try:
+        viewer.draw_circle(pos, radius / 2, color=color, width=radius / 3)
+    except:
+        pass
+
+def draw_body_head(viewer, midline_xy, radius) :
+    try:
+        pos = midline_xy[0]
+        viewer.draw_circle(pos, radius / 2, color=(255, 0, 0), width=radius / 6)
+    except:
+        pass
+
+def draw_selected_body(viewer, pos, contour_xy, radius, color) :
+    try:
+        if len(contour_xy) > 0 and not np.isnan(contour_xy).any():
+            viewer.draw_polygon(contour_xy, filled=False, color=color, width=radius / 5)
+        elif not np.isnan(pos).any():
+            viewer.draw_circle(pos, radius=radius, filled=False, color=color, width=radius / 3)
+    except:
+        pass

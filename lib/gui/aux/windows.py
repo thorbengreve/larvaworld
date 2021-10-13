@@ -4,12 +4,13 @@ import os
 
 import PySimpleGUI as sg
 
-from lib.aux import functions as fun
-from lib.conf import dtype_dicts as dtypes
-from lib.conf.conf import loadConfDict, saveConf, loadConf
+from lib.aux.dictsNlists import flatten_list
+from lib.aux.colsNstr import remove_prefix, remove_suffix
+from lib.conf.stored.conf import loadConfDict, saveConf, loadConf
+from lib.conf.base.dtypes import null_dict
 from lib.gui.aux.functions import retrieve_value, t_kws, b6_kws, w_kws, col_size
 from lib.gui.aux.buttons import named_bool_button
-from lib.stor import paths
+from lib.conf.base import paths
 
 
 def get_table(v, pars_dict, Nagents):
@@ -182,7 +183,7 @@ def set_kwargs(dic, title='Arguments', type_dict=None, **kwargs):
 
 def set_agent_kwargs(agent, **kwargs):
     class_name = type(agent).__name__
-    type_dict = dtypes.get_dict_dtypes(class_name)
+    type_dict = null_dict('agent', 'dtype')
     title = f'{class_name} args'
     dic = {}
     for p in list(type_dict.keys()):
@@ -202,7 +203,7 @@ def save_conf_window(conf, conftype, disp=None):
         disp = conftype
     temp = NamedList('save_conf', key=f'{disp}_ID',
                      choices=list(loadConfDict(conftype).keys()),
-                     readonly=False, enable_events=False, header_kws={'text' : f'Store new {disp}'})
+                     readonly=False, enable_events=False, header_kws={'text': f'Store new {disp}'})
     l = [
         temp.get_layout(),
         [sg.Ok(), sg.Cancel()]]
@@ -215,11 +216,11 @@ def save_conf_window(conf, conftype, disp=None):
         return None
 
 
-def import_window(datagroup_id,raw_dic):
+def import_window(datagroup_id, raw_dic):
     from lib.gui.tabs.gui import check_togglesNcollapsibles
     from lib.gui.aux.elements import CollapsibleDict
     g = loadConf(datagroup_id, 'Group')
-    group_dir = f'{paths.DataFolder}/{g["path"]}'
+    group_dir = f'{paths.path("DATA")}/{g["path"]}'
     raw_folder = f'{group_dir}/raw'
     proc_folder = f'{group_dir}/processed'
 
@@ -229,47 +230,37 @@ def import_window(datagroup_id,raw_dic):
     N = len(raw_dic)
     raw_ids = list(raw_dic.keys())
     raw_dirs = list(raw_dic.values())
-    raw_dirs = [fun.remove_prefix(dr, f'{raw_folder}/') for dr in raw_dirs]
-    raw_dirs = [fun.remove_suffix(dr, f'/{id}') for dr, id in zip(raw_dirs, raw_ids)]
-    raw_dirs = fun.unique_list(raw_dirs)
-    groupID0 = raw_dirs[0] if len(raw_dirs) == 1 else ''
+    temp = remove_prefix(raw_dirs[0], f'{raw_folder}/')
+    groupID0 = remove_suffix(temp, f'/{raw_ids[0]}')
     if N == 0:
         return proc_dir
     w_size = (1200, 800)
-    h_kws = {
-        'font': ('Helvetica', 8, 'bold'),
-        'justification': 'center',
-    }
-    b_merged = named_bool_button(name=M, state=False, toggle_name=None)
-    b_num = named_bool_button(name=E, state=False, toggle_name=None, disabled=False)
-    group_id = [sg.T('Group ID :', **t_kws(8)), sg.In(default_text=groupID0, k='import_group_id', **t_kws(14))]
-    l00 = sg.Col([[*group_id, *b_num, *b_merged],
-                  [sg.T('RAW DATASETS', **h_kws, **t_kws(30)), sg.T('NEW DATASETS', **h_kws, **t_kws(30))]])
-    l01 = sg.Col([
-        [sg.T(id, **t_kws(30)), sg.T('  -->  ', **t_kws(8)), sg.In(default_text=id, k=f'new_{id}', **t_kws(30))] for id
-        in
-        list(raw_dic.keys())],
-        vertical_scroll_only=True, scrollable=True, expand_y=True, vertical_alignment='top',
-        size=col_size(y_frac=0.4, win_size=w_size))
+    h_kws = {'font': ('Helvetica', 8, 'bold'), 'justification': 'center', **t_kws(30)}
+    l00 = [sg.T('Group ID :', **t_kws(8)), sg.In(default_text=groupID0, k='import_group_id', **t_kws(20)),
+           *named_bool_button(name=M, state=False, toggle_name=None),
+           *named_bool_button(name=E, state=False, toggle_name=None, disabled=False),
+           sg.Ok(), sg.Cancel()]
 
-    s1 = CollapsibleDict('build_conf', default=True, disp_name='Configuration',text_kws=t_kws(8))
+    l01 = [sg.Col([[sg.T('RAW DATASETS', **h_kws), sg.T(**t_kws(8)), sg.T('NEW DATASETS', **h_kws)],
+                   *[[sg.T(id, **t_kws(30)), sg.T('  -->  ', **t_kws(8)), sg.In(id, k=f'new_{id}', **t_kws(30))] for id
+                     in raw_ids]],
+                  vertical_scroll_only=True, scrollable=True, expand_y=True, vertical_alignment='top',
+                  size=col_size(y_frac=0.4, win_size=w_size))]
+
+    s1 = CollapsibleDict('build_conf', disp_name='Configuration', text_kws=t_kws(20), state=True)
     c = {}
     for s in [s1]:
         c.update(**s.get_subdicts())
-    l = [[sg.Col([
-        [l00],
-        [l01],
-        s1.get_layout(),
-        [sg.Col([[sg.Ok(), sg.Cancel()]], size=col_size(y_frac=0.2, win_size=w_size))],
-    ])]]
+    l = [l01, l00, s1.get_layout()]
     w = sg.Window('Build new datasets from raw files', l, size=w_size)
     while True:
         e, v = w.read()
-        gID = v['import_group_id']
+
         if e in (None, 'Exit', 'Cancel'):
             w.close()
             break
         else:
+            gID = v['import_group_id']
             toggled = check_togglesNcollapsibles(w, e, v, c)
             merge = w[f'TOGGLE_{M}'].get_state()
             for i, (id, dir) in enumerate(raw_dic.items()):
@@ -281,8 +272,6 @@ def import_window(datagroup_id,raw_dic):
                     for i, (id, dir) in enumerate(raw_dic.items()):
                         w.Element(f'new_{id}').Update(value=id)
                 else:
-                    # v_enum = v['import_group_id']
-                    # v_enum = v[E0]
                     for i, (id, dir) in enumerate(raw_dic.items()):
                         w.Element(f'new_{id}').Update(value=f'{gID}_{i}')
             if e == 'Ok':
@@ -292,20 +281,16 @@ def import_window(datagroup_id,raw_dic):
                     'group_id': gID,
                     **conf}
                 w.close()
-                # print(conf)
                 from lib.stor.managing import build_dataset
-                source_ids=list(raw_dic.keys())
-                sources=list(raw_dic.values())
-                targets = [f.replace(raw_folder, proc_folder) for f in sources]
-                # targets = [fun.remove_suffix(f, f'{id}') for f, id in zip(targets, source_ids)]
+                targets = [f.replace(raw_folder, proc_folder) for f in raw_dirs]
                 if not merge:
                     print(f'------ Building {N} discrete datasets ------')
-                    for target, source_id, source in zip(targets, source_ids, sources):
+                    for target, source_id, source in zip(targets, raw_ids, raw_dirs):
                         target_id = v[f'new_{source_id}']
                         if datagroup_id in ['Berni lab']:
                             target = f'{target}/{target_id}'
-                            source_files=[os.path.join(source, n) for n in os.listdir(source) if
-                                  n.startswith(source_id)]
+                            source_files = [os.path.join(source, n) for n in os.listdir(source) if
+                                            n.startswith(source_id)]
                             dd = build_dataset(id=target_id, target_dir=target, source_files=source_files, **kws)
                         elif datagroup_id in ['Jovanic lab']:
                             target = f'{target}/{target_id}'
@@ -320,16 +305,16 @@ def import_window(datagroup_id,raw_dic):
 
                 else:
                     print(f'------ Building a single merged dataset ------')
-                    target_id0 = v[f'new_{source_ids[0]}']
+                    target_id0 = v[f'new_{raw_ids[0]}']
 
                     if datagroup_id in ['Berni lab']:
                         target0 = f'{targets[0]}/{target_id0}'
-                        source_files = fun.flatten_list([[os.path.join(source, n) for n in os.listdir(source) if
-                                        n.startswith(source_id)] for source_id, source in raw_dic.items()])
+                        source_files = flatten_list([[os.path.join(source, n) for n in os.listdir(source) if
+                              n.startswith(source_id)] for source_id, source in raw_dic.items()])
                         dd = build_dataset(id=target_id0, target_dir=target0, source_files=source_files, **kws)
                     elif datagroup_id in ['Schleyer lab']:
-                        target0 = targets[0].replace(source_ids[0], target_id0)
-                        dd = build_dataset(id=target_id0, target_dir=target0, source_dir=sources, **kws)
+                        target0 = targets[0].replace(raw_ids[0], target_id0)
+                        dd = build_dataset(id=target_id0, target_dir=target0, source_dir=raw_dirs, **kws)
                     elif datagroup_id in ['Jovanic lab']:
                         raise NotImplemented
                     proc_dir[dd.id] = dd
@@ -351,3 +336,47 @@ def change_dataset_id(dic, old_ids):
             d.set_id(new_id)
             dic[new_id] = dic.pop(old_id)
     return dic
+
+
+def larvagroup_window(base_dict={}, id=None, **kwargs):
+    from lib.gui.aux.elements import CollapsibleDict
+    from lib.gui.tabs.gui import check_togglesNcollapsibles
+    k = 'LarvaGroup'
+    gID = 'Group ID'
+    c0 = CollapsibleDict(k, use_header=False, as_entry=gID, subdict_state=True, col_idx=[[0, 1, 2, 3, 4, 7], [5], [6]])
+    c = c0.get_subdicts()
+    l = c0.get_layout(as_col=False) + [[sg.Ok(), sg.Cancel()]]
+    kws = w_kws
+    kws['default_element_size'] = (16, 1)
+    w = sg.Window(k, l, size=col_size(0.8, 0.5), **kws, **kwargs)
+    if id is not None:
+        c0.update_window(w, dic={**base_dict[id], gID: id}, prefix=c0.name)
+    while True:
+        e, v = w.read()
+        if e == 'Ok':
+            dic = c0.get_dict(v, w)
+            new_id = list(dic.keys())[0]
+            if new_id in [None, '']:
+                sg.popup_no_buttons(f'{gID} not provided', title='No ID!', auto_close_duration=2, auto_close=True)
+                continue
+            elif new_id in base_dict.keys():
+                choice, _ = sg.Window('Overwrite?',
+                                      [[sg.T(f'{gID} {new_id} already exists.\nOverwrite it?')],
+                                       [sg.Yes(s=10), sg.No(s=10)]],
+                                      disable_close=True).read(close=True)
+                if choice == 'No':
+                    continue
+                else:
+                    break
+            else:
+                break
+        elif e in ['Cancel', None]:
+            dic = {}
+            break
+        check_togglesNcollapsibles(w, e, v, c)
+    w.close()
+    return dic
+
+
+if __name__ == "__main__":
+    dic = larvagroup_window({'dd': 'ss'})

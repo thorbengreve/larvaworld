@@ -3,48 +3,30 @@ import sys
 import time
 import numpy as np
 
+sys.path.insert(0, '..')
+from lib.sim.single.single_run import SingleRun
+from lib.sim.single.analysis import sim_analysis
+from lib.conf.stored.conf import expandConf, loadConfDict
+from lib.anal.argparsers import MultiParser
 
-if __name__ == '__main__':
-    sys.path.insert(0, '..')
-    from lib.sim.single_run import run_sim, get_exp_conf
-    from lib.sim.analysis import sim_analysis
-    from lib.conf.conf import loadConfDict
-    from lib.aux import argparsers as prs
+MP = MultiParser(['visualization', 'sim_params'])
+p = MP.add()
+p.add_argument('experiment', choices=list(loadConfDict('Exp').keys()), help='The experiment mode')
+p.add_argument('-a', '--analysis', action="store_true", help='Whether to run analysis')
 
-    s = time.time()
+args = p.parse_args()
+d = MP.get(args)
+exp = args.experiment
 
-    parser = argparse.ArgumentParser(description="Run given experiments")
-    parser.add_argument('experiment', choices=list(loadConfDict('Exp').keys()), help='The experiment mode')
-    parser.add_argument('-a', '--analysis', action="store_true", help='Whether to run analysis')
-    parser.add_argument('-no_save', '--no_save', action="store_true", help='Whether to run analysis')
+s = time.time()
+exp_conf = expandConf(exp, 'Exp')
+exp_conf['sim_params'] = d['sim_params']
+ds = SingleRun(**exp_conf, vis_kwargs=d['visualization']).run()
 
-    parser = prs.add_sim_kwargs(parser)
-    parser = prs.add_life_kwargs(parser)
-    parser = prs.add_vis_kwargs(parser)
-    parser = prs.add_place_kwargs(parser)
+if args.analysis:
 
-    args = parser.parse_args()
+    fig_dict, results=sim_analysis(ds, exp)
 
-    exp_type = args.experiment
-    analysis = args.analysis
-    sim_kwargs = prs.get_sim_kwargs(args)
-    life_kwargs = prs.get_life_kwargs(args)
-    vis_kwargs = prs.get_vis_kwargs(args)
-    place_kwargs = prs.get_place_kwargs(args)
-
-
-
-    exp_conf = get_exp_conf(exp_type,  sim_kwargs, life_kwargs, **place_kwargs)
-    kws={'vis_kwargs':vis_kwargs, 'save_data_flag' : not args.no_save, **exp_conf}
-
-
-    # kws=mimic_dataset(dir='/home/panos/nawrot_larvaworld/larvaworld/data/SchleyerGroup/processed/FRUvsQUI/Naive->PUR/EM/control_20l_to_meters', vis_kwargs=vis_kwargs)
-
-    d = run_sim(**kws)
-
-    if analysis:
-        fig_dict, results=sim_analysis(d, exp_type)
-
-    e = time.time()
-    if d is not None:
-        print(f'    Single run completed in {np.round(e - s).astype(int)} seconds!')
+e = time.time()
+if d is not None:
+    print(f'    Single run completed in {np.round(e - s).astype(int)} seconds!')

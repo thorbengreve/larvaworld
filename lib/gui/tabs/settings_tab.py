@@ -1,15 +1,14 @@
 import time
 import PySimpleGUI as sg
 
-from lib.aux.functions import get_pygame_key
-from lib.conf.conf import saveConfDict, loadConfDict
-from lib.conf.init_dtypes import store_controls
+import lib.aux.dictsNlists
+from lib.conf.stored.conf import saveConfDict, loadConfDict
+from lib.conf.base.dtypes import store_controls
 from lib.gui.aux.elements import CollapsibleDict, Collapsible
-from lib.gui.aux.functions import t_kws, gui_col
+from lib.gui.aux.functions import t_kws, gui_col, gui_cols, get_pygame_key
 from lib.gui.aux.buttons import GraphButton
-import lib.conf.dtype_dicts as dtypes
 from lib.gui.tabs.tab import GuiTab
-from lib.aux import functions as fun
+
 
 class SettingsTab(GuiTab):
     def __init__(self, **kwargs):
@@ -36,7 +35,7 @@ class SettingsTab(GuiTab):
     @property
     def used_keys(self):
         d=self.controls_dict['keys']
-        return fun.flatten_list([list(k.values()) for k in list(d.values())])
+        return lib.aux.dictsNlists.flatten_list([list(k.values()) for k in list(d.values())])
 
     def single_control_layout(self, k, v, prefix=None, editable=True):
         k0=f'{prefix} {k}' if prefix is not None else k
@@ -80,21 +79,16 @@ class SettingsTab(GuiTab):
 
     def build(self):
         c = {}
-
-        # c1 = CollapsibleDict('Visualization', dict=dtypes.get_dict('visualization', mode='video', video_speed=60),
-        #                      type_dict=dtypes.get_dict_dtypes('visualization'), toggled_subsections=None)
-        c1 = CollapsibleDict('visualization', default=True, toggled_subsections=False, state=True)
-        c2 = CollapsibleDict('replay', default=True, toggled_subsections=False)
+        c1 = CollapsibleDict('visualization', state=True, subdict_state=True)
+        c2 = CollapsibleDict('replay', state=True, subdict_state=True)
 
         c3, d = self.build_controls_collapsible(c)
 
         for s in [c1, c2, c3]:
             c.update(s.get_subdicts())
-        l = [[
-            gui_col([c1], 0.33),
-            gui_col([c2], 0.33),
-            gui_col([c3], 0.34),
-        ]]
+
+        l = gui_cols(cols=[[c1], [c2], [c3]])
+
         return l, c, {}, d
 
     def update_controls(self, v, w):

@@ -2,15 +2,15 @@ import numpy as np
 from scipy.stats import multivariate_normal
 from shapely.geometry import Point
 
-import lib.aux.functions as fun
-import lib.aux.rendering as ren
+from lib.aux.colsNstr import colorname2tuple
+from lib.anal.rendering import InputBox
 
 
 class LarvaworldAgent:
     def __init__(self,unique_id: str,model, pos=None, default_color=None, radius=None,visible=True,
                  # odor_id=None, odor_intensity=0.0, odor_spread=0.1,
-                 odor={'odor_id':None, 'odor_intensity':0.0, 'odor_spread':0.1},
-                 group='', can_be_carried=False):
+                 odor={'odor_id':None, 'odor_intensity':None, 'odor_spread':None},
+                 group='', can_be_carried=False, **kwargs):
         self.visible = visible
         self.selected = False
         self.unique_id = unique_id
@@ -22,17 +22,13 @@ class LarvaworldAgent:
         self.initial_pos = pos
         self.pos = self.initial_pos
         if type(default_color) == str:
-            default_color = fun.colorname2tuple(default_color)
+            default_color = colorname2tuple(default_color)
         self.default_color = default_color
         self.color = self.default_color
         self.radius = radius
         self.id_box = self.init_id_box()
         self.odor_id = odor['odor_id']
-        self.odor_intensity = odor['odor_intensity']
-        self.odor_spread = odor['odor_spread']
-        if self.odor_spread is None:
-            self.odor_spread = 0.1
-        self.set_odor_dist()
+        self.set_odor_dist(odor['odor_intensity'], odor['odor_spread'])
 
         self.carried_objects = []
         self.can_be_carried = can_be_carried
@@ -45,7 +41,7 @@ class LarvaworldAgent:
         return self.radius
 
     def init_id_box(self):
-        id_box = ren.InputBox(visible=False, text=self.unique_id,
+        id_box = InputBox(visible=False, text=self.unique_id,
                               color_inactive=self.default_color, color_active=self.default_color,
                               screen_pos=None, agent=self)
         return id_box
@@ -77,12 +73,11 @@ class LarvaworldAgent:
         self.set_color(color)
 
     def set_odor_dist(self, intensity=None, spread=None):
-        if intensity is not None :
-            self.odor_intensity=intensity
-        if spread is not None :
-            self.odor_spread=spread
-        self.odor_dist = multivariate_normal([0, 0], [[self.odor_spread, 0], [0, self.odor_spread]])
-        self.odor_peak_value = self.odor_intensity / self.odor_dist.pdf([0, 0])
+        self.odor_intensity=intensity
+        self.odor_spread=spread
+        if intensity is not None and spread is not None:
+            self.odor_dist = multivariate_normal([0, 0], [[self.odor_spread, 0], [0, self.odor_spread]])
+            self.odor_peak_value = self.odor_intensity / self.odor_dist.pdf([0, 0])
 
     def get_gaussian_odor_value(self, pos):
         return self.odor_dist.pdf(pos) * self.odor_peak_value

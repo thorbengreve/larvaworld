@@ -6,43 +6,65 @@ import pandas as pd
 import warnings
 import copy
 
-import lib.aux.functions as fun
+import lib.aux.dictsNlists as dNl
 import lib.aux.naming as nam
-from lib.anal.process.basic import preprocess, process
-from lib.anal.process.bouts import annotate
-from lib.anal.process.spatial import align_trajectories, fixate_larva
-import lib.conf.env_conf as env
-from lib.conf.data_conf import SimParConf
-import lib.conf.dtype_dicts as dtypes
-from lib.envs._larvaworld_replay import LarvaWorldReplay
+
+from lib.conf.base.dtypes import null_dict
 
 
 class LarvaDataset:
-    def __init__(self, dir, id='unnamed', fr=16, Npoints=3, Ncontour=0, life_params={},
-                 par_conf=SimParConf, save_data_flag=True, load_data=True,env_params={},
-                 sample_dataset='reference', group_id='SimGroup'):
+    def __init__(self, dir, id='unnamed', fr=16, Npoints=None, Ncontour=0,
+                 par_conf=None, load_data=True, env_params={}, larva_groups={}):
+        if par_conf is None:
+            from lib.conf.stored.conf import loadConf
+            par_conf = loadConf('SimParConf', 'Par')
         self.par_config = par_conf
-        self.save_data_flag = save_data_flag
         self.define_paths(dir)
         if os.path.exists(self.dir_dict['conf']):
-            self.config = fun.load_dict(self.dir_dict['conf'], use_pickle=False)
+            self.config = dNl.load_dict(self.dir_dict['conf'], use_pickle=False)
         else:
+            sources_u = {k: v['pos'] for k, v in env_params['food_params']['source_units'].items()}
+            sources_g = {k: v['distribution']['loc'] for k, v in env_params['food_params']['source_groups'].items()}
+            sources = {**sources_u, **sources_g}
+            group_ids = list(larva_groups.keys())
+            samples = dNl.unique_list(larva_groups[k]['sample'] for k in group_ids)
+            if len(group_ids) == 1:
+                group_id = group_ids[0]
+                color = larva_groups[group_id]['default_color']
+                sample = larva_groups[group_id]['sample']
+            else:
+                group_id = None
+                color = None
+                sample = samples[0] if len(samples) == 1 else None
+
+            if Npoints is None:
+                try:
+                    # FIXME This only takes the first configuration into account
+                    Npoints = list(larva_groups.values())[0]['model']['body']['Nsegs'] + 1
+                except:
+                    Npoints = 3
+
             self.config = {'id': id,
                            'group_id': group_id,
+                           'group_ids': group_ids,
                            'dir': dir,
+                           'aux_dir': self.dir_dict['aux_h5'],
+                           'parent_plot_dir': f'{dir}/plots',
                            'fr': fr,
+                           'dt': 1 / fr,
                            'Npoints': Npoints,
                            'Ncontour': Ncontour,
-                           'sample_dataset': sample_dataset,
+                           'sample': sample,
+                           'color': color,
                            **par_conf,
                            # 'arena_pars': arena_pars,
                            'env_params': env_params,
-                           **life_params
+                           'larva_groups': larva_groups,
+                           'sources': sources,
+                           # **life_params
                            }
 
         self.__dict__.update(self.config)
-
-        self.dt = 1 / self.fr
         self.configure_body()
         self.define_linear_metrics()
         if load_data:
@@ -61,35 +83,35 @@ class LarvaDataset:
         if food is not None:
             self.food_endpoint_data = food
 
-    def replace_outliers_with_nan(self, pars, stds=None, thresholds=None, additional_pars=None):
-        if self.step_data is None:
-            self.load()
-        s = self.step_data
-        for i, p in enumerate(pars):
-            for id in self.agent_ids:
-                k = s.loc[(slice(None), id), p]
-                l = k.values
-                if stds is not None:
-                    m = k.mean()
-                    s = k.std()
-                    ind = np.abs(l - m) > stds * s
-                if thresholds is not None:
-                    low, high = thresholds[i]
-                    if low is not None:
-                        ind = l < low
-                    if high is not None:
-                        ind = l > high
-                l[ind] = np.nan
-                s.loc[(slice(None), id), p] = l
-                if additional_pars is not None:
-                    for apar in additional_pars:
-                        ak = s.loc[(slice(None), id), apar]
-                        al = ak.values
-                        al[ind] = np.nan
-                        s.loc[(slice(None), id), apar] = al
-
-        self.save()
-        print('All outliers replaced')
+    # def replace_outliers_with_nan(self, pars, stds=None, thresholds=None, additional_pars=None):
+    #     if self.step_data is None:
+    #         self.load()
+    #     s = self.step_data
+    #     for i, p in enumerate(pars):
+    #         for id in self.agent_ids:
+    #             k = s.loc[(slice(None), id), p]
+    #             l = k.values
+    #             if stds is not None:
+    #                 m = k.mean()
+    #                 s = k.std()
+    #                 ind = np.abs(l - m) > stds * s
+    #             if thresholds is not None:
+    #                 low, high = thresholds[i]
+    #                 if low is not None:
+    #                     ind = l < low
+    #                 if high is not None:
+    #                     ind = l > high
+    #             l[ind] = np.nan
+    #             s.loc[(slice(None), id), p] = l
+    #             if additional_pars is not None:
+    #                 for apar in additional_pars:
+    #                     ak = s.loc[(slice(None), id), apar]
+    #                     al = ak.values
+    #                     al[ind] = np.nan
+    #                     s.loc[(slice(None), id), apar] = al
+    #
+    #     self.save()
+    #     print('All outliers replaced')
 
     def drop_agents(self, agents, is_last=True, show_output=True):
         if self.step_data is None:
@@ -99,20 +121,32 @@ class LarvaDataset:
         self.agent_ids = self.step_data.index.unique('AgentID').values
         self.num_ticks = self.step_data.index.unique('Step').size
 
-        fs = [f'{self.aux_dir}/{f}' for f in os.listdir(self.aux_dir)]
-        ns = fun.flatten_list([[f'{f}/{n}' for n in os.listdir(f) if n.endswith('.csv')] for f in fs])
-        for n in ns:
-            try:
-                df = pd.read_csv(n, index_col=0)
-                df.loc[~df.index.isin(agents)].to_csv(n, index=True, header=True)
-            except:
-                pass
+        aux = pd.HDFStore(self.dir_dict['aux_h5'])
+        for k in aux.keys():
+            # print(k)
+            df = aux[k]
+            # print(df.index)
+            df.drop(agents, inplace=True)
+            aux[k] = df
+        aux.close()
+
+        # try:
+        #     fs = [f'{self.aux_dir}/{f}' for f in os.listdir(self.aux_dir)]
+        #     ns = fun.flatten_list([[f'{f}/{n}' for n in os.listdir(f) if n.endswith('.csv')] for f in fs])
+        #     for n in ns:
+        #         try:
+        #             df = pd.read_csv(n, index_col=0)
+        #             df.loc[~df.index.isin(agents)].to_csv(n, index=True, header=True)
+        #         except:
+        #             pass
+        # except:
+        #     pass
         if is_last:
             self.save()
         if show_output:
             print(f'{len(agents)} agents dropped and {len(self.endpoint_data.index)} remaining.')
 
-    def drop_pars(self, pars=[], groups=None, is_last=True, show_output=True, **kwargs):
+    def drop_pars(self, groups=None, is_last=True, show_output=True, **kwargs):
         if groups is None:
             groups = {n: False for n in
                       ['midline', 'contour', 'stride', 'non_stride', 'stridechain', 'pause', 'Lturn', 'Rturn', 'turn',
@@ -120,17 +154,18 @@ class LarvaDataset:
         if self.step_data is None:
             self.load()
         s = self.step_data
-
+        pars=[]
         if groups['midline']:
-            pars += fun.flatten_list(self.points_xy)
+            pars += dNl.flatten_list(self.points_xy)
         if groups['contour']:
-            pars += fun.flatten_list(self.contour_xy)
+            pars += dNl.flatten_list(self.contour_xy)
         for c in ['stride', 'non_stride', 'stridechain', 'pause', 'Lturn', 'Rturn', 'turn']:
             if groups[c]:
-                pars += [f'{c}_start', f'{c}_stop', f'{c}_id', f'{c}_dur', f'{c}_length']
+                pars += [nam.start(c), nam.stop(c), nam.id(c), nam.dur(c), nam.length(c), nam.dst(c),
+                         nam.straight_dst(c), nam.scal(nam.dst(c)), nam.scal(nam.straight_dst(c)), nam.orient(c)]
         if groups['unused']:
             pars += self.get_unused_pars()
-        pars = fun.unique_list(pars)
+        pars = dNl.unique_list(pars)
         s.drop(columns=[p for p in pars if p in s.columns], inplace=True)
         self.set_data(step=s)
         if is_last:
@@ -152,8 +187,8 @@ class LarvaDataset:
         pars = [p for p in self.step_data.columns.values if p not in vpars]
         return pars
 
-    def read(self, key='end'):
-        return pd.read_hdf(self.dir_dict['data_h5'], key)
+    def read(self, key='end', file='data_h5'):
+        return pd.read_hdf(self.dir_dict[file], key)
 
     def load(self, step=True, end=True, food=False):
         store = pd.HDFStore(self.dir_dict['data_h5'])
@@ -185,18 +220,17 @@ class LarvaDataset:
         except:
             return 0
 
-    def save(self, step=True, end=True, food=False):
-        if self.save_data_flag == True:
-            store = pd.HDFStore(self.dir_dict['data_h5'])
-            if step:
-                store['step'] = self.step_data
-            if end:
-                store['end'] = self.endpoint_data
-            if food:
-                store['food'] = self.food_endpoint_data
-            self.save_config()
-            store.close()
-            print(f'Dataset {self.id} stored.')
+    def save(self, step=True, end=True, food=False, add_reference=False):
+        store = pd.HDFStore(self.dir_dict['data_h5'])
+        if step:
+            store['step'] = self.step_data
+        if end:
+            store['end'] = self.endpoint_data
+        if food:
+            store['food'] = self.food_endpoint_data
+        self.save_config(add_reference=add_reference)
+        store.close()
+        print(f'Dataset {self.id} stored.')
 
     def save_dicts(self, env):
         for l in env.get_flies():
@@ -220,31 +254,58 @@ class LarvaDataset:
                 store[name] = df
         store.close()
 
-    def save_config(self):
-        for a in ['N', 't0', 'duration', 'quality', 'dt', 'agent_ids']:
+    def save_ExpFitter(self, dic=None):
+        dNl.save_dict(dic, self.dir_dict['ExpFitter'], use_pickle=False)
+
+    def load_ExpFitter(self):
+        try:
+            dic = dNl.load_dict(self.dir_dict['ExpFitter'], use_pickle=False)
+            return dic
+        except:
+            return None
+
+    def save_config(self, add_reference=False):
+        # print(self.config['ExpFitter'])
+
+        for a in ['N', 't0', 'duration', 'quality']:
             try:
                 self.config[a] = getattr(self, a)
             except:
                 pass
+        self.config['dt'] = 1 / self.fr
         for k, v in self.config.items():
             if type(v) == np.ndarray:
                 self.config[k] = v.tolist()
-        fun.save_dict(self.config, self.dir_dict['conf'], use_pickle=False)
+        dNl.save_dict(self.config, self.dir_dict['conf'], use_pickle=False)
+        if add_reference:
+            from lib.conf.stored.conf import saveConf
+            saveConf(self.config, 'Ref', f'{self.group_id}.{self.id}')
 
-    def save_agent(self, pars=None, header=True):
+    def save_agents(self, ids=None, pars=None):
         if self.step_data is None:
             self.load()
-        for i, agent in enumerate(self.agent_ids):
-            if pars is not None:
-                agent_data = self.step_data[pars].xs(agent, level='AgentID', drop_level=True)
-            else:
-                agent_data = self.step_data.xs(agent, level='AgentID', drop_level=True)
-            dir_path = os.path.join(self.data_dir, 'single_larva_data')
-            if not os.path.exists(dir_path):
-                os.makedirs(dir_path)
-            file_path = os.path.join(dir_path, f'{agent}.csv')
-            agent_data.to_csv(file_path, index=True, header=header)
+        if ids is None:
+            ids = self.agent_ids
+        if pars is None:
+            pars = self.step_data.columns
+        for id in ids:
+            f = os.path.join(self.dir_dict['single_tracks'], f'{id}.csv')
+            store = pd.HDFStore(f)
+            store['step'] = self.step_data[pars].loc[(slice(None), id), :]
+            store['end'] = self.endpoint_data.loc[[id]]
+            store.close()
         print('All agent data saved.')
+
+    def load_agent(self, id):
+        try:
+            f = os.path.join(self.dir_dict['single_tracks'], f'{id}.csv')
+            store = pd.HDFStore(f)
+            s = store['step']
+            e = store['end']
+            store.close()
+            return s, e
+        except:
+            return None, None
 
     def load_bout_dicts(self, ids=None):
         if ids is None:
@@ -253,7 +314,7 @@ class LarvaDataset:
         d = {}
         for id in ids:
             file = f'{dir}/{id}.txt'
-            dic = fun.load_dicts([file])[0]
+            dic = dNl.load_dicts([file])[0]
             df = pd.DataFrame.from_dict(dic)
             df.index.set_names(0, inplace=True)
             d[id] = df
@@ -266,11 +327,8 @@ class LarvaDataset:
         store.close()
         return df
 
-    def load_aux(self, type, pars=None):
-        # if type in ['distro', 'dispersion', 'stride'] :
-        store = pd.HDFStore(self.dir_dict['aux_h5'])
-        df = store[f'{type}.{pars}']
-        store.close()
+    def load_aux(self, type, par=None):
+        df = self.read(key=f'{type}.{par}', file='aux_h5')
         return df
 
     @property
@@ -287,7 +345,7 @@ class LarvaDataset:
         if ids is None:
             ids = self.agent_ids
         files = [f'{id}.txt' for id in ids]
-        ds = fun.load_dicts(files=files, folder=self.dir_dict['deb'], **kwargs)
+        ds = dNl.load_dicts(files=files, folder=self.dir_dict['deb'], **kwargs)
         return ds
 
     def get_pars_list(self, p0, s0, draw_Nsegs):
@@ -295,39 +353,41 @@ class LarvaDataset:
             p0 = self.point
         elif type(p0) == int:
             p0 = 'centroid' if p0 == -1 else self.points[p0]
-        dic={}
-        dic['pos_p']=pos_p = nam.xy(p0) if set(nam.xy(p0)).issubset(s0.columns) else ['x', 'y']
-        dic['mid_p']=mid_p = [xy for xy in self.points_xy if set(xy).issubset(s0.columns)]
-        dic['cen_p']=cen_p = self.cent_xy if set(self.cent_xy).issubset(s0.columns) else []
-        dic['con_p']=con_p = [xy for xy in self.contour_xy if set(xy).issubset(s0.columns)]
+        dic = {}
+        dic['pos_p'] = pos_p = nam.xy(p0) if set(nam.xy(p0)).issubset(s0.columns) else ['x', 'y']
+        dic['mid_p'] = mid_p = [xy for xy in self.points_xy if set(xy).issubset(s0.columns)]
+        dic['cen_p'] = cen_p = self.cent_xy if set(self.cent_xy).issubset(s0.columns) else []
+        dic['con_p'] = con_p = [xy for xy in self.contour_xy if set(xy).issubset(s0.columns)]
         dic['chunk_p'] = chunk_p = [p for p in ['stride_stop', 'stride_id', 'pause_id', 'feed_id'] if p in s0.columns]
-        if draw_Nsegs is None :
+        if draw_Nsegs is None:
             dic['ang_p'] = ang_p = []
             dic['ors_p'] = ors_p = []
-        elif draw_Nsegs==2 and {'bend', 'front_orientation'}.issubset(s0.columns) :
-            dic['ang_p']=ang_p = ['bend']
-            dic['ors_p'] = ors_p=['front_orientation']
-        elif draw_Nsegs==len(mid_p)-1 and set(nam.orient(self.segs)).issubset(s0.columns) :
+        elif draw_Nsegs == 2 and {'bend', 'front_orientation'}.issubset(s0.columns):
+            dic['ang_p'] = ang_p = ['bend']
+            dic['ors_p'] = ors_p = ['front_orientation']
+        elif draw_Nsegs == len(mid_p) - 1 and set(nam.orient(self.segs)).issubset(s0.columns):
             dic['ang_p'] = ang_p = []
-            dic['ors_p']=ors_p = nam.orient(self.segs)
-        else :
-            raise ValueError (f'The required angular parameters for reconstructing a {draw_Nsegs}-segment body do not exist')
+            dic['ors_p'] = ors_p = nam.orient(self.segs)
+        else:
+            raise ValueError(
+                f'The required angular parameters for reconstructing a {draw_Nsegs}-segment body do not exist')
 
-        pars = fun.unique_list(cen_p + pos_p+ ang_p + ors_p + chunk_p + fun.flatten_list(mid_p  + con_p))
+        pars = dNl.unique_list(cen_p + pos_p + ang_p + ors_p + chunk_p + dNl.flatten_list(mid_p + con_p))
 
         return dic, pars, p0
 
     def get_smaller_dataset(self, s0, e0, ids=None, pars=None, time_range=None, dynamic_color=None):
         if ids is None:
-            ids = self.agent_ids
+            ids = e0.index.values.tolist()
         if type(ids) == list and all([type(i) == int for i in ids]):
             ids = [self.agent_ids[i] for i in ids]
         if dynamic_color is not None and dynamic_color in s0.columns:
             pars.append(dynamic_color)
             # traj_color =s0[dynamic_color]
-        else :
-            dynamic_color=None
+        else:
+            dynamic_color = None
         pars = [p for p in pars if p in s0.columns]
+        print(ids)
         if time_range is None:
             s = copy.deepcopy(s0.loc[(slice(None), ids), pars])
         else:
@@ -340,17 +400,19 @@ class LarvaDataset:
         traj_color = s[dynamic_color] if dynamic_color is not None else None
         return s, e, ids, traj_color
 
-    def visualize(self, vis_kwargs=None, agent_ids=None, save_to=None, time_range=None,draw_Nsegs=None,env_params=None,
-                  space_in_mm=True, track_point=None, dynamic_color=None,
+    def visualize(self, s0=None, e0=None, vis_kwargs=None, agent_ids=None, save_to=None, time_range=None,
+                  draw_Nsegs=None, env_params=None, track_point=None, dynamic_color=None, use_background=False,
                   transposition=None, fix_point=None, secondary_fix_point=None, **kwargs):
+        from lib.model.envs._larvaworld_replay import LarvaWorldReplay
         if vis_kwargs is None:
-            vis_kwargs = dtypes.get_dict('visualization', mode='video')
-        if self.step_data is None:
-            self.load()
-        s0, e0=self.step_data, self.endpoint_data
+            vis_kwargs = null_dict('visualization', mode='video')
+        if s0 is None and e0 is None:
+            if self.step_data is None:
+                self.load()
+            s0, e0 = self.step_data, self.endpoint_data
         dic, pars, track_point = self.get_pars_list(track_point, s0, draw_Nsegs)
         s, e, ids, traj_color = self.get_smaller_dataset(ids=agent_ids, pars=pars, time_range=time_range,
-                                             dynamic_color=dynamic_color, s0=s0, e0=e0)
+                                                         dynamic_color=dynamic_color, s0=s0, e0=e0)
         if len(ids) == 1:
             n0 = ids[0]
         elif len(ids) == len(self.agent_ids):
@@ -363,17 +425,20 @@ class LarvaDataset:
         arena_dims = env_params['arena']['arena_dims']
 
         if transposition is not None:
+            from lib.process.spatial import align_trajectories
             s = align_trajectories(s, track_point=track_point, arena_dims=arena_dims, mode=transposition,
                                    config=self.config)
             bg = None
             n1 = 'transposed'
         elif fix_point is not None:
+            from lib.process.spatial import fixate_larva
             s, bg = fixate_larva(s, point=fix_point, secondary_point=secondary_fix_point,
                                  arena_dims=arena_dims, config=self.config)
             n1 = 'fixed'
         else:
             bg = None
             n1 = 'normal'
+
         replay_id = f'{n0}_{n1}'
         if vis_kwargs['render']['media_name'] is None:
             vis_kwargs['render']['media_name'] = replay_id
@@ -388,9 +453,10 @@ class LarvaDataset:
             'Nsteps': len(s.index.unique('Step').values),
             'save_to': save_to,
             'background_motion': bg,
+            'use_background': True if bg is not None else False,
             'Box2D': False,
             'traj_color': traj_color,
-            'space_in_mm': space_in_mm
+            # 'space_in_mm': space_in_mm
         }
 
         replay_env = LarvaWorldReplay(step_data=s, endpoint_data=e, config=self.config,
@@ -400,13 +466,54 @@ class LarvaDataset:
         replay_env.run()
         print('Visualization complete')
 
+    def visualize_single(self, id, close_view=True, fix_point=-1, secondary_fix_point=None, save_to=None,
+                         draw_Nsegs=None, vis_kwargs=None, **kwargs):
+        from lib.model.envs._larvaworld_replay import LarvaWorldReplay
+        from lib.process.spatial import fixate_larva
+        try:
+            s0, e0 = self.load_agent(id)
+        except:
+            self.save_agents(ids=[id])
+            s0, e0 = self.load_agent(id)
+        if close_view:
+            from lib.conf.base.dtypes import null_dict
+            env_params = {'arena': null_dict('arena', arena_dims=(0.01, 0.01))}
+        else:
+            env_params = self.env_params
+        dic, pars, track_point = self.get_pars_list(fix_point, s0, draw_Nsegs)
+        s, bg = fixate_larva(s0, point=fix_point, secondary_point=secondary_fix_point,
+                             arena_dims=env_params['arena']['arena_dims'], config=self.config)
+        if save_to is None:
+            save_to = self.vis_dir
+        replay_id = f'{id}_fixed_at_{fix_point}'
+        if vis_kwargs is None:
+            from lib.conf.base.dtypes import null_dict
+            vis_kwargs = null_dict('visualization', mode='video', video_speed=60, media_name=replay_id)
+        base_kws = {
+            'vis_kwargs': vis_kwargs,
+            'env_params': env_params,
+            'id': replay_id,
+            'dt': self.dt,
+            'Nsteps': len(s.index.unique('Step').values),
+            'save_to': save_to,
+            'background_motion': bg,
+            'use_background': True if bg is not None else False,
+            'Box2D': False,
+            'traj_color': None,
+            # 'space_in_mm': space_in_mm
+        }
+        replay_env = LarvaWorldReplay(step_data=s, endpoint_data=e0, config=self.config,
+                                      **dic, draw_Nsegs=draw_Nsegs,
+                                      **base_kws, **kwargs)
 
+        replay_env.run()
+        print('Visualization complete')
 
     def compute_preference_index(self, return_num=False, return_all=False):
         if not hasattr(self, 'endpoint_data'):
             self.load(step=False)
         e = self.endpoint_data
-        r = 0.2 * self.arena_pars['arena_dims'][0]
+        r = 0.2 * self.env_params['arena']['arena_dims'][0]
         p = 'x' if 'x' in e.keys() else nam.final('x')
         d = e[p]
         N = d.count()
@@ -443,7 +550,6 @@ class LarvaDataset:
                 raise ValueError('Simulated pauses not found')
         else:
             return exp_bends, exp_bendvels
-
 
     def load_fits(self, filepath=None, selected_pars=None):
         if filepath is None:
@@ -511,9 +617,11 @@ class LarvaDataset:
             'vis': self.vis_dir,
             'comp_plot': os.path.join(self.plot_dir, 'comparative'),
             'deb': os.path.join(self.data_dir, 'deb_dicts'),
+            'single_tracks': os.path.join(self.data_dir, 'single_tracks'),
             'bout_dicts': os.path.join(self.data_dir, 'bout_dicts'),
             'tables_h5': os.path.join(self.data_dir, 'tables.h5'),
             'sim': os.path.join(self.data_dir, 'sim_conf.txt'),
+            'ExpFitter': os.path.join(self.data_dir, 'ExpFitter.txt'),
             'fit': os.path.join(self.data_dir, 'dataset_fit.csv'),
             'conf': os.path.join(self.data_dir, 'dataset_conf.csv'),
             'data_h5': os.path.join(self.data_dir, 'data.h5'),
@@ -531,30 +639,32 @@ class LarvaDataset:
             self.velocity = nam.lin(self.velocity)
             self.acceleration = nam.lin(self.acceleration)
 
-    def enrich(self, preprocessing={}, processing={}, annotation={}, enrich_aux={},
-               to_drop={}, show_output=False, is_last=True, **kwargs):
+    def enrich(self, preprocessing={}, processing={}, annotation={},
+               to_drop={}, recompute=False, mode='minimal',show_output=False, is_last=True, **kwargs):
+        from lib.process.basic import preprocess, process
+        from lib.process.bouts import annotate
         print()
         print(f'--- Enriching dataset {self.id} with derived parameters ---')
-        self.config['front_body_ratio'] = 0.5
-        self.save_config()
         warnings.filterwarnings('ignore')
         c = {
             's': self.step_data,
             'e': self.endpoint_data,
             'config': self.config,
             'show_output': show_output,
-             'is_last': False
+            'recompute': recompute,
+            'mode': mode,
+            'is_last': False
         }
-        preprocess(**preprocessing, **c, **enrich_aux, **kwargs)
-        process(**processing, **enrich_aux, **c, **kwargs)
-        annotate(**annotation, **enrich_aux, **c, **kwargs)
+        preprocess(**preprocessing, **c, **kwargs)
+        process(**processing, **c, **kwargs)
+        annotate(**annotation, **c, **kwargs)
         self.drop_pars(**to_drop, **c)
         if is_last:
             self.save()
         return self
 
     def drop_immobile_larvae(self, vel_threshold=0.1, is_last=True):
-        # self.compute_spatial_metrics(mode='minimal')
+        # self.comp_spatial(mode='minimal')
         D = self.step_data[nam.scal('velocity')]
         immobile_ids = []
         for id in self.agent_ids:
@@ -565,19 +675,18 @@ class LarvaDataset:
         if len(immobile_ids) > 0:
             self.drop_agents(agents=immobile_ids, is_last=is_last)
 
-    def get_par(self, par, endpoint_par=True):
+    def get_par(self, par):
         try:
-            p_df = self.load_aux(type='distro', pars=par)
+            return self.read(key='end')[par]
         except:
-            if endpoint_par:
-                if not hasattr(self, 'end'):
-                    self.load(step=False)
-                p_df = self.endpoint_data[par]
-            else:
-                if not hasattr(self, 'step'):
-                    self.load(end=False)
-                p_df = self.step_data[par]
-        return p_df
+            try:
+                return self.read(key='step')[par]
+            except:
+                try:
+                    return self.read(key=f'distro.{par}', file='aux_h5')
+                except:
+                    print(f'Parameter {par} not found.')
+                    return None
 
     def delete(self, show_output=True):
         shutil.rmtree(self.dir)
@@ -590,27 +699,31 @@ class LarvaDataset:
         if save:
             self.save_config()
 
-    def split_dataset(self, groups=None, is_last=True, show_output=True):
-        if groups is None:
-            groups = fun.unique_list([id.split('_')[0] for id in self.agent_ids])
-        if len(groups) == 1:
+    def split_dataset(self, is_last=False, show_output=False, delete_parent=False):
+        c = self.config
+        gIDs = c['group_ids']
+        if len(gIDs) == 1:
             return [self]
-        new_dirs = [f'{self.dir}/../{self.id}.{f}' for f in groups]
-        if all([os.path.exists(new_dir) for new_dir in new_dirs]):
-            new_ds = [LarvaDataset(new_dir) for new_dir in new_dirs]
+        fs = [f'{self.dir}/../{self.id}.{gID}' for gID in gIDs]
+        if all([os.path.exists(f) for f in fs]):
+            ds = [LarvaDataset(f) for f in fs]
         else:
             if self.step_data is None:
                 self.load()
-            new_ds = []
-            for f, new_dir in zip(groups, new_dirs):
-                invalid_ids = [id for id in self.agent_ids if not str.startswith(id, f)]
-                copy_tree(self.dir, new_dir)
-                new_d = LarvaDataset(new_dir)
-                new_d.drop_agents(invalid_ids, is_last=is_last, show_output=show_output)
-                # new_d.load()
-                # new_d.set_id(f'{self.id}_{f}', save=is_last)
-                new_d.set_id(f)
-                new_ds.append(new_d)
+            s, e = self.step_data, self.endpoint_data
+            ds = []
+            for gID, f in zip(gIDs, fs):
+                gConf = c['larva_groups'][gID]
+                valid_ids = [id for id in self.agent_ids if str.startswith(id, gID)]
+                copy_tree(self.dir, f)
+                d = LarvaDataset(f, id=gID, env_params=c['env_params'], larva_groups={gID: gConf}, load_data=False)
+                d.set_data(step=s.loc[(slice(None), valid_ids), :], end=e.loc[valid_ids])
+                d.config['parent_plot_dir'] = self.plot_dir
+                if is_last:
+                    d.save()
+                ds.append(d)
             if show_output:
-                print(f'Dataset {self.id} splitted in {[d.id for d in new_ds]}')
-        return new_ds
+                print(f'Dataset {self.id} splitted in {[d.id for d in ds]}')
+        if delete_parent:
+            self.delete(show_output=show_output)
+        return ds

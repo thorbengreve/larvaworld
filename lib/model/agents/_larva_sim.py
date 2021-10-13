@@ -2,7 +2,7 @@ import random
 
 import numpy as np
 
-from lib.aux import functions as fun
+import lib.aux.sim_aux
 from lib.model.agents._larva import Larva
 from lib.model.body.controller import BodySim
 from lib.model.modules.brain import DefaultBrain
@@ -11,42 +11,26 @@ from lib.model.DEB.deb import DEB
 
 
 class LarvaSim(BodySim, Larva):
-    def __init__(self, unique_id, model, pos, orientation, larva_pars, group='', default_color=None, **kwargs):
+    def __init__(self, unique_id, model, pos, orientation, larva_pars,odor, group='', default_color=None,life=None, **kwargs):
         Larva.__init__(self, unique_id=unique_id, model=model, pos=pos,
-                       odor=larva_pars['odor'], group=group, default_color=default_color)
-        # try:
-        #     larva_pars['brain']['olfactor_params']['odor_dict'] = self.update_odor_dicts(
-        #         larva_pars['brain']['olfactor_params']['odor_dict'])
-        # except:
-        #     pass
+                       odor=odor, group=group, default_color=default_color)
+        BodySim.__init__(self, model=model, orientation=orientation, **larva_pars['physics'], **larva_pars['body'],**kwargs)
         self.brain = self.build_brain(larva_pars['brain'])
-        self.build_energetics(larva_pars['energetics'])
-        BodySim.__init__(self, model=model, orientation=orientation, **larva_pars['physics'],
-                         **larva_pars['body'], **kwargs)
-        # print(larva_pars['body'])
+        self.build_energetics(larva_pars['energetics'], life=life)
+
         self.reset_feeder()
         self.radius = self.sim_length / 2
 
         self.food_detected, self.feeder_motion, self.current_V_eaten, self.feed_success = None, False, 0, None
         self.food_missed, self.food_found = False, False
-
-    # def update_odor_dicts(self, odor_dict):  #
-    #
-    #     temp = {'mean': 0.0, 'std': 0.0}
-    #     food_odor_ids = fun.unique_list(
-    #         [s.odor_id for s in self.model.get_food() + [self] if s.odor_id is not None])
-    #     if odor_dict is None:
-    #         odor_dict = {}
-    #         # odor_dict = {odor_id: temp for odor_id in food_odor_ids}
-    #     for odor_id in food_odor_ids:
-    #         if odor_id not in list(odor_dict.keys()):
-    #             odor_dict[odor_id] = temp
-    #     return odor_dict
+        self.cum_food_detected=0
 
     def compute_next_action(self):
         self.cum_dur += self.model.dt
-        pos = self.get_olfactor_position()
-        self.detect_food(pos)
+        pos = self.olfactor_pos
+        self.food_detected=self.detect_food(pos)
+        self.cum_food_detected+=int(self.food_detected is not None)
+
         self.lin_activity, self.ang_activity, self.feeder_motion = self.brain.run(pos)
         self.current_V_eaten, self.feed_success = self.feed(self.food_detected, self.feeder_motion)
         self.run_energetics(self.current_V_eaten)
@@ -54,7 +38,7 @@ class LarvaSim(BodySim, Larva):
 
 
     def detect_food(self, pos):
-        if self.brain.feeder is not None:
+        if self.brain.feeder is not None or self.touch_sensors is not None:
             prev_item = self.food_detected
             item, q = None, None
             grid = self.model.food_grid
@@ -71,7 +55,9 @@ class LarvaSim(BodySim, Larva):
                     item, q = food, food.quality
             self.food_found = True if (prev_item is None and item is not None) else False
             self.food_missed = True if (prev_item is not None and item is None) else False
-            self.food_detected=item
+            return item
+
+
 
     def feed(self, source, motion):
         a_max = self.max_V_bite
@@ -106,9 +92,12 @@ class LarvaSim(BodySim, Larva):
     def get_max_V_bite(self):
         return self.brain.feeder.V_bite * self.V  # ** (2 / 3)
 
-    def build_energetics(self, energetic_pars):
-        self.real_length = None
-        self.real_mass = None
+    def build_energetics(self, energetic_pars, life=None):
+        if not hasattr(self, 'real_mass'):
+            self.real_mass = None
+        if not hasattr(self, 'real_length'):
+            self.real_length = None
+
         self.V = None
 
         # p_am=260
@@ -117,22 +106,23 @@ class LarvaSim(BodySim, Larva):
             if energetic_pars['deb_on']:
                 self.temp_cum_V_eaten = 0
                 self.temp_mean_f = []
-                self.hunger_as_EEB = energetic_pars['hunger_as_EEB']
                 self.f_exp_coef = np.exp(-energetic_pars['f_decay'] * self.model.dt)
                 steps_per_day = 24 * 60
                 cc = {
                     'id': self.unique_id,
                     'steps_per_day': steps_per_day,
                     'hunger_gain': energetic_pars['hunger_gain'],
+                    'hunger_as_EEB': energetic_pars['hunger_as_EEB'],
                     'V_bite': self.brain.feeder.V_bite,
                     'absorption': energetic_pars['absorption'],
-                    'substrate_quality': self.model.substrate_quality,
+                    'substrate_quality': life['substrate_quality'],
+                    'substrate_type': life['substrate_type'],
+                    'intermitter': self.brain.intermitter,
                 }
-                if self.hunger_as_EEB:
-                    self.deb = DEB(base_hunger=self.brain.intermitter.base_EEB, **cc)
-                else:
-                    self.deb = DEB(**cc)
-                self.deb.grow_larva(hours_as_larva=self.model.hours_as_larva, epochs=self.model.epochs)
+                self.deb = DEB(**cc)
+
+                self.deb.grow_larva(**life)
+                # self.deb.grow_larva(hours_as_larva=self.model.hours_as_larva, epochs=self.model.epochs)
                 if energetic_pars['DEB_dt'] is None:
                     self.deb_step_every = 1
                     self.deb.set_steps_per_day(int(24 * 60 * 60 / self.model.dt))
@@ -190,22 +180,22 @@ class LarvaSim(BodySim, Larva):
 
 
     def update_behavior_dict(self):
-        behavior_dict = self.null_behavior_dict.copy()
-        if self.brain.modules['crawler'] and self.brain.crawler.active():
-            behavior_dict['stride_id'] = True
-            if self.brain.crawler.complete_iteration:
-                behavior_dict['stride_stop'] = True
-        if self.brain.modules['intermitter'] and self.brain.intermitter.active():
-            behavior_dict['pause_id'] = True
-        if self.brain.modules['feeder'] and self.brain.feeder.active():
-            behavior_dict['feed_id'] = True
-        orvel = self.get_head().get_angularvelocity()
+        d = self.null_behavior_dict.copy()
+        inter=self.brain.intermitter
+        if inter is not None :
+            s, f, p = inter.active_bouts
+            d['stride_id'] = s is not None
+            d['feed_id'] = f is not None
+            d['pause_id'] = p is not None
+            d['stride_stop'] = inter.stride_stop
+
+        orvel = self.front_orientation_vel
         if orvel > 0:
-            behavior_dict['Lturn_id'] = True
+            d['Lturn_id'] = True
         elif orvel < 0:
-            behavior_dict['Rturn_id'] = True
-        color = self.update_color(self.default_color, behavior_dict)
-        self.set_color([color for seg in self.segs])
+            d['Rturn_id'] = True
+        color = self.update_color(self.default_color, d)
+        self.set_color([color]*self.Nsegs)
 
     @property
     def front_orientation(self):
@@ -257,7 +247,7 @@ class LarvaSim(BodySim, Larva):
             elif self.model.experiment == 'keep_the_flag':
                 carrier_group = self.group
                 carrier_group_odor_id = self.odor_id
-                opponent_group = fun.LvsRtoggle(carrier_group)
+                opponent_group = lib.aux.sim_aux.LvsRtoggle(carrier_group)
                 opponent_group_odor_id = f'{opponent_group}_odor'
                 for f in self.model.get_flies():
                     if f.group == carrier_group:
@@ -272,6 +262,6 @@ class LarvaSim(BodySim, Larva):
         # Paint the body to visualize effector state
         if self.model.color_behavior:
             self.update_behavior_dict()
-        self.brain.intermitter.update(food_present=self.food_detected, feed_success=self.feed_success,
-                                      base_EEB=self.deb.hunger if (self.energetics and self.hunger_as_EEB) else self.brain.intermitter.base_EEB)
+        # print(self.deb.hunger, self.deb.e)
+        self.brain.intermitter.update(food_present=self.food_detected, feed_success=self.feed_success)
 

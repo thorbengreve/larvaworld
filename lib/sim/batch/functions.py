@@ -6,20 +6,22 @@ import numpy as np
 import pandas as pd
 from pypet import ObjectTable
 
+from lib.process.aux import suppress_stdout
+from lib.aux.dictsNlists import reconstruct_dict
+import lib.aux.sim_aux
 from lib.anal.plotting import plot_2d, plot_3pars, plot_endpoint_scatter, plot_endpoint_params, plot_debs, \
     plot_heatmap_PI
-from lib.aux import functions as fun
 from lib.sim.batch.aux import grid_search_dict, load_traj
-from lib.sim.single_run import run_sim
+from lib.sim.single.single_run import run_sim, SingleRun
 from lib.stor.larva_dataset import LarvaDataset
 
 
 def prepare_batch(batch, **kwargs):
-    space = grid_search_dict(**batch['space_search'])
+    # print(batch.keys())
+    space = grid_search_dict(batch['space_search'])
     if batch['optimization'] is not None:
-        batch['optimization']['ranges'] = np.array(batch['space_search']['ranges'])
-    # print(list(batch.keys()))
-    # exp_conf['sim_params']['path'] = batch_type
+        batch['optimization']['ranges'] = np.array(
+            [batch['space_search'][k]['range'] for k in batch['space_search'].keys()])
     prepared_batch = {
         'batch_type': batch['batch_type'],
         'batch_id': batch['batch_id'],
@@ -30,6 +32,7 @@ def prepare_batch(batch, **kwargs):
         'optimization': batch['optimization'],
         'exp_kws': batch['exp_kws'],
         'post_kws': {},
+        'proc_kws': batch['proc_kws'],
         **kwargs
     }
     return prepared_batch
@@ -46,7 +49,7 @@ def get_Nbest(traj, fit_par, ranges, Nbest=20, minimize=True, mutate=True, recom
     if mutate:
         space = []
         for v0s, r in zip(V0s, ranges):
-            vs = [fun.mutate_value(v0, r, scale=0.1) for v0 in v0s]
+            vs = [lib.aux.sim_aux.mutate_value(v0, r, scale=0.1) for v0 in v0s]
             if recombine:
                 random.shuffle(vs)
             space.append(vs)
@@ -87,6 +90,14 @@ def save_results_df(traj):
         pass
     df.to_csv(os.path.join(traj.config.dir_path, 'results.csv'), index=True, header=True)
     return df
+
+
+def exp_fit_processing(traj, d, exp_fitter):
+    from lib.anal.comparing import ExpFitter
+    p = traj.config.fit_par
+    fit = exp_fitter.compare(d)
+    traj.f_add_result(p, fit, comment='The fit')
+    return d, fit
 
 
 def default_processing(traj, d=None):
@@ -214,7 +225,7 @@ def deb_analysis(traj):
         plot_endpoint_params(ds, new_ids, mode='deb', save_to=save_to)
     # deb_dicts = fun.flatten_list(
     #     [[deb_dict(d, id, new_id=new_id) for id in d.agent_ids] for d, new_id in zip(ds, new_ids)])
-    deb_dicts = fun.flatten_list([d.load_deb_dicts() for d in ds])
+    deb_dicts = lib.aux.dictsNlists.flatten_list([d.load_deb_dicts() for d in ds])
     fig_dict = {}
     for m in ['energy', 'growth', 'full']:
         f = plot_debs(deb_dicts=deb_dicts, save_to=save_to, save_as=f'deb_{m}.pdf', mode=m)
@@ -262,23 +273,26 @@ def post_processing(traj, result_tuple):
     traj.f_store()
 
 
-def single_run(traj, procfunc=None, save_hdf5=True, exp_kws={}):
-    sim = fun.reconstruct_dict(traj.f_get('sim_params'))
-    sim['sim_ID'] = f'run_{traj.v_idx}'
-    sim['path'] = traj.config.dataset_path
-    # print(sim['sim_ID'])
-    with fun.suppress_stdout(True):
-        d = run_sim(
-            env_params=fun.reconstruct_dict(traj.f_get('env_params')),
-            sim_params=sim,
-            life_params=fun.reconstruct_dict(traj.f_get('life_params')),
-            save_data_flag=False,
-            **exp_kws)
+def single_run(traj, procfunc=None, save_hdf5=True, exp_kws={}, proc_kws={}):
+    with suppress_stdout(True):
+        ds = SingleRun(
+        # ds = run_sim(
+            env_params=reconstruct_dict(traj.f_get('env_params')),
+            sim_params=reconstruct_dict(traj.f_get('sim_params'),
+                                        sim_ID=f'run_{traj.v_idx}', path=traj.config.dataset_path,
+                                        save_data=False),
+            life_params=reconstruct_dict(traj.f_get('life_params')),
+            larva_groups=reconstruct_dict(traj.f_get('larva_groups')),
+            **exp_kws).run()
 
         if procfunc is None:
             results = np.nan
         else:
-            d, results = procfunc(traj, d)
+            if len(ds)==1:
+                d=ds[0]
+                d, results = procfunc(traj, d, **proc_kws)
+            else :
+                raise ValueError (f'Splitting resulting dataset yielded {len(ds)} datasets but the batch-run is configured for a single one.')
 
     if save_hdf5:
         s, e = [ObjectTable(data=k, index=k.index, columns=k.columns.values, copy=True) for k in
@@ -289,7 +303,7 @@ def single_run(traj, procfunc=None, save_hdf5=True, exp_kws={}):
 
 
 def PI_computation(traj, dataset):
-    ind = dataset.compute_preference_index()
+    ind = dataset.comp_PI()
     traj.f_add_result('PI', ind, comment=f'The preference index')
     return dataset, ind
 
@@ -316,6 +330,7 @@ procfunc_dict = {
     'default': default_processing,
     'deb': deb_processing,
     'odor_preference': PI_computation,
+    'exp_fit': exp_fit_processing
 }
 postfunc_dict = {
     'null': null_post_processing,
@@ -334,7 +349,8 @@ def batch_methods(run='default', post='default', final='null'):
             'postfunc': postfunc_dict[post],
             'finfunc': finfunc_dict[final], }
 
-def retrieve_results(batch_type, batch_id) :
+
+def retrieve_results(batch_type, batch_id):
     traj = load_traj(batch_type, batch_id)
     func = finfunc_dict[traj.config.batch_methods.final]
     return func(traj)

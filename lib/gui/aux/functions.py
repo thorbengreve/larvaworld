@@ -139,6 +139,21 @@ def gui_col(element_list, x_frac=0.25, y_frac=1.0, **kwargs):
     c = sg.Col(l, **col_kws, size=col_size(x_frac=x_frac, y_frac=y_frac), **kwargs)
     return c
 
+def gui_cols(cols, x_fracs=None, y_fracs=None, **kwargs) :
+    N=len(cols)
+    if x_fracs is None :
+        x_fracs=[1.0/N]*N
+    elif type(x_fracs)==float :
+        x_fracs = [x_fracs] * N
+    if y_fracs is None :
+        y_fracs=[1.0]*N
+    ls=[]
+    for col,x,y in zip(cols, x_fracs, y_fracs) :
+        l=gui_col(col, x_frac=x, y_frac=y, **kwargs)
+        ls.append(l)
+    return [ls]
+
+
 
 def gui_row(element_list, x_frac=1.0, y_frac=0.5,x_fracs=None, **kwargs):
     N=len(element_list)
@@ -159,3 +174,41 @@ def collapse(layout, key, visible=True):
     """
     return sg.pin(sg.Col(layout, key=key, visible=visible))
 
+
+def agent_list2dict(l, header='unique_id'):
+    d = {}
+    for a in l:
+        id = a[header]
+        a.pop(header)
+        d[id] = a
+    return d
+
+
+def get_pygame_key(key):
+    pygame_keys = {
+        'BackSpace': 'BACKSPACE',
+        'tab': 'TAB',
+        'del': 'DELETE',
+        'clear': 'CLEAR',
+        'Return': 'RETURN',
+        'Escape': 'ESCAPE',
+        'space': 'SPACE',
+        'exclam': 'EXCLAIM',
+        'quotedbl': 'QUOTEDBL',
+        '+': 'PLUS',
+        'comma': 'COMMA',
+        '-': 'MINUS',
+        'period': 'PERIOD',
+        'slash': 'SLASH',
+        'numbersign': 'HASH',
+        'Down:': 'DOWN',
+        'Up:': 'UP',
+        'Right:': 'RIGHT',
+        'Left:': 'LEFT',
+        'dollar': 'DOLLAR',
+        'ampersand': 'AMPERSAND',
+        'parenleft': 'LEFTPAREN',
+        'parenright': 'RIGHTPAREN',
+        'asterisk': 'ASTERISK',
+    }
+    return f'K_{pygame_keys[key]}' if key in list(pygame_keys.keys()) else f'K_{key}'

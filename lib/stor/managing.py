@@ -1,18 +1,13 @@
-import copy
-import time
+import os
 import warnings
 from itertools import product
 import pandas as pd
 
-
-from lib.anal.plotting import comparative_analysis
-
-
+import lib.aux.dictsNlists
 from lib.stor.building import build_Jovanic, build_Schleyer, build_Berni
-from lib.conf.conf import *
+from lib.conf.stored.conf import *
 from lib.stor.larva_dataset import LarvaDataset
-import lib.aux.functions as fun
-import lib.aux.naming as nam
+
 
 def build_dataset(datagroup_id,id,group_id, target_dir, source_dir=None,source_files=None, **kwargs):
     warnings.filterwarnings('ignore')
@@ -21,6 +16,7 @@ def build_dataset(datagroup_id,id,group_id, target_dir, source_dir=None,source_f
     data_conf = g['tracker']['resolution']
     par_conf = g['parameterization']
     arena_pars = g['tracker']['arena']
+    env_params={'arena' : arena_pars}
 
 
     try:
@@ -28,7 +24,7 @@ def build_dataset(datagroup_id,id,group_id, target_dir, source_dir=None,source_f
     except:
         pass
 
-    d = LarvaDataset(dir=target_dir, id=id, group_id=group_id, par_conf=par_conf, arena_pars=arena_pars,
+    d = LarvaDataset(dir=target_dir, id=id, group_id=group_id, par_conf=par_conf, env_params=env_params,
                      load_data=False, **data_conf)
 
 
@@ -47,7 +43,7 @@ def build_dataset(datagroup_id,id,group_id, target_dir, source_dir=None,source_f
         d.save(food=False)
         d.agent_ids = d.step_data.index.unique('AgentID').values
         d.num_ticks = d.step_data.index.unique('Step').size
-        d.starting_tick = d.step_data.index.unique('Step')[0]
+        # d.starting_tick = d.step_data.index.unique('Step')[0]
         print(f'--- Dataset {d.id} created with {len(d.agent_ids)} larvae! ---')
     else:
         print(f'--- Failed to create dataset {d.id}! ---')
@@ -60,7 +56,7 @@ def build_datasets_old(datagroup_id, raw_folders, folders=None, suffixes=None,
     warnings.filterwarnings('ignore')
     g = loadConf(datagroup_id, 'Group')
     build_conf = g['tracker']['filesystem']
-    group_dir=f'{paths.DataFolder}/{g["path"]}'
+    group_dir=f'{paths.path("DATA")}/{g["path"]}'
     raw_dir=f'{group_dir}/raw'
 
     ds = get_datasets(datagroup_id=datagroup_id, last_common='processed', names=names,
@@ -108,7 +104,7 @@ def get_datasets(datagroup_id, names, last_common='processed', folders=None, suf
     data_conf = g['tracker']['resolution']
     par_conf = g['parameterization']
     arena_pars = g['tracker']['arena']
-    group_dir = f'{paths.DataFolder}/{g["path"]}'
+    group_dir = f'{paths.path("DATA")}/{g["path"]}'
 
     last_common = f'{group_dir}/{last_common}'
     if folders is None:
@@ -161,10 +157,11 @@ def enrich_datasets(datagroup_id, datasets=None, names=None, enrich_conf=None, *
 
 
 def analyse_datasets(datagroup_id, save_to=None, **kwargs):
+    from lib.sim.single.analysis import comparative_analysis
     ds = get_datasets(datagroup_id=datagroup_id, **kwargs)
     if save_to is None and len(ds) > 1:
         g = loadConf(datagroup_id, 'Group')
-        save_to = f'{paths.DataFolder}/{g["path"]}/plots'
+        save_to = f'{paths.path("DATA")}/{g["path"]}/plots'
     fig_dict = comparative_analysis(datasets=ds, labels=[d.id for d in ds], save_to=save_to)
     return fig_dict
 
@@ -174,33 +171,13 @@ def visualize_datasets(datagroup_id, save_to=None, save_as=None, vis_kwargs={}, 
     ds = get_datasets(datagroup_id=datagroup_id, **kwargs)
     if save_to is None and len(ds) > 1:
         g = loadConf(datagroup_id, 'Group')
-        save_to = f'{paths.DataFolder}/{g["path"]}/visuals'
+        save_to = f'{paths.path("DATA")}/{g["path"]}/visuals'
     if save_as is None:
         save_as = [d.id for d in ds]
     for d, n in zip(ds, save_as):
         vis_kwargs['media_name'] = n
         d.visualize(save_to=save_to, vis_kwargs=vis_kwargs, **replay_kwargs)
 
-
-# def compute_PIs(datagroup_id=None, save_to=None, ds=None, save_as='PIs.csv', **kwargs):
-#     if ds is None:
-#         ds = get_datasets(datagroup_id=datagroup_id, **kwargs)
-#     ids = [d.id for d in ds]
-#     if save_to is None and len(ds) > 1 and datagroup_id is not None:
-#         g = loadConf(datagroup_id, 'Group')
-#         save_to = f'{paths.DataFolder}/{g["path"]}/plots/PIs'
-#     if not os.path.exists(save_to):
-#         os.makedirs(save_to)
-#     PIs = []
-#     Ns = []
-#     for j, d in enumerate(ds):
-#         PI, N = d.compute_preference_index(return_num=True)
-#         PIs.append(PI)
-#         Ns.append(N)
-#     df = pd.DataFrame({'PI': PIs, 'N': Ns}, index=ids)
-#     df.to_csv(f'{save_to}/{save_as}', header=True, index=True)
-#     print(f'PIs saved as {save_as}')
-#     print(df)
 
 
 def detect_dataset(datagroup_id=None, folder_path=None, raw=True, **kwargs):
@@ -242,7 +219,7 @@ def detect_dataset(datagroup_id=None, folder_path=None, raw=True, **kwargs):
                     dic[id] = folder_path
             elif df_ is not None:
                 fs = os.listdir(folder_path)
-                ids = fun.unique_list([f.split(df_)[0] for f in fs if df_ in f])
+                ids = lib.aux.dictsNlists.unique_list([f.split(df_)[0] for f in fs if df_ in f])
                 for id in ids:
                     dic[id] = folder_path
         return dic
@@ -276,142 +253,9 @@ def detect_dataset_in_subdirs(datagroup_id, folder_path, last_dir, full_ID=False
 
 
 if __name__ == '__main__':
+    # dds=[[f'/home/panos/nawrot_larvaworld/larvaworld/data/JovanicGroup/processed/3_conditions/AttP{g}@UAS_TNT/{c}' for g in ['2', '240']] for c in ['Fed', 'Deprived', 'Starved']]
+    # dds=fun.flatten_list(dds)
     # dr = '/home/panos/nawrot_larvaworld/larvaworld/data/SchleyerGroup/FRUvsQUI/Naive->PUR/EM/control'
-    dr1='/home/panos/nawrot_larvaworld/larvaworld/data/SimGroup/single_runs/nengo_dish/nengo_dish_9'
-    dr2='/home/panos/nawrot_larvaworld/larvaworld/data/SimGroup/single_runs/imitation/control_20l_to_meters_imitation_0'
-    ddr='/home/panos/nawrot_larvaworld/larvaworld/data/SchleyerGroup/processed/FRUvsQUI/Naive->PUR/EM/controls_20l'
-    c1='/home/panos/nawrot_larvaworld/larvaworld/data/SchleyerGroup/processed/FRUvsQUI/Naive->PUR/EM/control_15l'
-    c2='/home/panos/nawrot_larvaworld/larvaworld/data/pairs/controls_20l_imitation_0'
-    c3='/home/panos/nawrot_larvaworld/larvaworld/data/SimGroup/single_runs/chemotaxis_local/test2'
-    # pref = '/home/panos/nawrot_larvaworld/larvaworld/data/JovanicGroup/raw/3_conditions/AttP240@UAS_TNT/Starved'
-    # x_contour_file = f'{pref}_x_contour.txt'
-    # y_contour_file = f'{pref}_y_contour.txt'
-    # xcs = pd.read_csv(x_contour_file, header=None, sep='\t')
-    # ycs = pd.read_csv(y_contour_file, header=None, sep='\t')
-    # xcs, ycs = fun.convex_hull(xs=xcs.values, ys=ycs.values, N=30)
-    #
-    # contour_xy = nam.xy(nam.contour(30))
-    # xc_pars = [x for x, y in contour_xy]
-    # yc_pars = [y for x, y in contour_xy]
-    # xcs = pd.DataFrame(xcs, columns=xc_pars, index=None)
-    # ycs = pd.DataFrame(ycs, columns=yc_pars, index=None)
+    dr1='/home/panos/nawrot_larvaworld/larvaworld/data/SimGroup/single_runs/dispersion_x2/dispersion_x2_3.Levy'
+    dr2='/home/panos/nawrot_larvaworld/larvaworld/data/SimGroup/single_runs/dispersion_x2/dispersion_x2_3.Oscillatory'
 
-    # yys=vertices[:,:][1]
-    from lib.conf.batch_conf import imitation_exp
-    import lib.conf.dtype_dicts as dtypes
-    from lib.sim.single_run import run_sim
-
-    vis_kwargs = dtypes.get_dict('visualization', mode='video', video_speed=60)
-    # dr='/home/panos/nawrot_larvaworld/larvaworld/data/JovanicGroup/processed/3_conditions/AttP240@UAS_TNT/Starved'
-    for dddr in [c1] :
-        d = LarvaDataset(dddr)
-        exp_conf=imitation_exp(d.config, model='explorer', exp='dish', idx=0)
-        exp_conf['experiment'] = 'dish'
-        exp_conf['save_data_flag'] = True
-        dd= run_sim(**exp_conf)
-        # dd= run_sim(**exp_conf, vis_kwargs=vis_kwargs)
-        from lib.sim.analysis import sim_analysis
-
-        fig_dict, results = sim_analysis(dd, 'dish')
-        # print(results)
-        # # res=mimic_dataset(d)
-        # # d.visualize(vis_kwargs=vis_kwargs, space_in_mm=False, draw_Nsegs=2)
-        # # s,e=d.step_data,d.endpoint_data
-        c=d.config
-        print(c['bout_distros'])
-        print(c.keys())
-        # print(e.columns.values[0:20])
-        # print(e['tortuosity_2_mean'].mean())
-        # print(e['tortuosity_5_mean'].mean())
-        # print(e['tortuosity_10_mean'].mean())
-        # print(e['tortuosity_20_mean'].mean())
-        # print(e['tortuosity_5_std'])
-        # print(e['cum_dst'])
-        # print(s['x'].max(), s['x'].min())
-        # print(s['y'].max(), s['y'].min())
-        # print(e['cum_dur'].mean())
-        # print(e['cum_dur'].std())
-    # ss={'a' :[2], 'b':[3]}
-    # s=pd.DataFrame.from_dict(ss)
-    # bar = pd.DataFrame(np.random.randn(10, 4))
-    # s0=time.time()
-    # store = pd.HDFStore('test.h5')
-    # store['foo'] = s  # write to HDF5
-    # bar = store['foo']  # retrieve
-    # store.close()
-#     s1=time.time()
-#
-#     store = pd.HDFStore('test.h5')
-#     bar = store['foo']
-#     b1=bar['head_x'].xs('Larva_137', level='AgentID', drop_level=True).values[3390]
-#     print()
-#     store.close()
-#     s2 = time.time()
-#
-#     s.to_csv('test.csv', index=True, header=True)
-#     s3 = time.time()
-#     bar2 = pd.read_csv('test.csv', index_col=['Step', 'AgentID'])
-#     b2=bar2['head_x'].xs('Larva_137', level='AgentID', drop_level=True).values[3390]
-#     print()
-#     s4 = time.time()
-#     # a=s.xs(d.agent_ids[0], level='AgentID', drop_level=True)
-#     # print(a[list(d.contour_xy[0])])
-#     # print(a[list(d.contour_xy[1])])
-#     # print(s['point3_x'].min(), s['point3_x'].max())
-#     print(s1-s0, s2-s1)
-#     print(s3-s2, s4-s3)
-#     print(s2-s0, s4-s2)
-#     print(np.isnan(b1))
-#     print(np.isnan(b2))
-#     print(type(b1), type(b2))
-#     # print(d.config)
-# #     # print(s['head_x'].min(), s['head_x'].max())
-# #     # print(s['head_y'].min(), s['head_y'].max())
-# #     # print(d.config)
-# #     # print(d.config['point'])
-
-        # print(e.columns.values[40:60])
-        # print(e['tortuosity_5_mean'].mean())
-        # print(e['cum_dst'])
-        # print(s['x'].max(), s['x'].min())
-        # print(s['y'].max(), s['y'].min())
-        # print(e['cum_dur'].mean())
-        # print(e['cum_dur'].std())
-    # ss={'a' :[2], 'b':[3]}
-    # s=pd.DataFrame.from_dict(ss)
-    # bar = pd.DataFrame(np.random.randn(10, 4))
-    # s0=time.time()
-    # store = pd.HDFStore('test.h5')
-    # store['foo'] = s  # write to HDF5
-    # bar = store['foo']  # retrieve
-    # store.close()
-#     s1=time.time()
-#
-#     store = pd.HDFStore('test.h5')
-#     bar = store['foo']
-#     b1=bar['head_x'].xs('Larva_137', level='AgentID', drop_level=True).values[3390]
-#     print()
-#     store.close()
-#     s2 = time.time()
-#
-#     s.to_csv('test.csv', index=True, header=True)
-#     s3 = time.time()
-#     bar2 = pd.read_csv('test.csv', index_col=['Step', 'AgentID'])
-#     b2=bar2['head_x'].xs('Larva_137', level='AgentID', drop_level=True).values[3390]
-#     print()
-#     s4 = time.time()
-#     # a=s.xs(d.agent_ids[0], level='AgentID', drop_level=True)
-#     # print(a[list(d.contour_xy[0])])
-#     # print(a[list(d.contour_xy[1])])
-#     # print(s['point3_x'].min(), s['point3_x'].max())
-#     print(s1-s0, s2-s1)
-#     print(s3-s2, s4-s3)
-#     print(s2-s0, s4-s2)
-#     print(np.isnan(b1))
-#     print(np.isnan(b2))
-#     print(type(b1), type(b2))
-#     # print(d.config)
-# #     # print(s['head_x'].min(), s['head_x'].max())
-# #     # print(s['head_y'].min(), s['head_y'].max())
-# #     # print(d.config)
-# #     # print(d.config['point'])

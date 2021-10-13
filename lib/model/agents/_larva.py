@@ -3,19 +3,19 @@ from copy import deepcopy
 import numpy as np
 from scipy.spatial.distance import euclidean
 
+import lib.aux.sim_aux
 from lib.model.agents._agent import LarvaworldAgent
 
 
 class Larva(LarvaworldAgent):
     def __init__(self, unique_id, model, pos=None, radius=None, default_color=None, **kwargs):
-        # print(unique_id, pos)
+        # print(unique_id)
         if default_color is None:
             default_color = model.generate_larva_color()
         super().__init__(unique_id=unique_id, model=model, default_color=default_color, pos=pos, radius=radius,
                          **kwargs)
         self.behavior_pars = ['stride_stop', 'stride_id', 'pause_id', 'feed_id', 'Lturn_id', 'Rturn_id']
         self.null_behavior_dict = dict(zip(self.behavior_pars, [False] * len(self.behavior_pars)))
-
     def update_color(self, default_color, behavior_dict, mode='lin'):
         color = deepcopy(default_color)
         if mode == 'lin':
@@ -49,6 +49,10 @@ class Larva(LarvaworldAgent):
     @property
     def olfactory_activation(self):
         return self.brain.olfactory_activation
+
+    @property
+    def touch_activation(self):
+        return self.brain.touch_activation
 
     @property
     def first_odor_concentration(self):
@@ -85,7 +89,14 @@ class Larva(LarvaworldAgent):
 
     @property
     def cum_reward(self):
-        return self.brain.memory.rewardSum
+        try :
+            return self.brain.memory.rewardSum
+        except :
+            return self.brain.touch_memory.rewardSum
+
+    # @property
+    # def on_food(self):
+    #     return int(self.food_detected is not None)
 
     @property
     def dt(self):
@@ -220,7 +231,7 @@ class Larva(LarvaworldAgent):
 
     @property
     def crawler_freq(self):
-        return self.brain.crawler.freq
+        return lib.aux.sim_aux.freq
 
     @property
     def num_strides(self):
@@ -316,7 +327,11 @@ class Larva(LarvaworldAgent):
 
     @property
     def gut_occupancy(self):
-        return self.deb.gut.get_gut_occupancy()
+        return self.deb.gut.occupancy
+
+    @property
+    def ingested_volume(self):
+        return self.deb.gut.ingested_volume
 
     @property
     def ingested_body_mass_ratio(self):

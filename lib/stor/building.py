@@ -1,10 +1,11 @@
 import os.path
-
+import numpy as np
 import pandas as pd
 
-from lib.conf.conf import *
-from lib.aux.functions import match_larva_ids, convex_hull
-from lib.aux import functions as fun
+import lib.process.aux
+import lib.aux.dictsNlists
+import lib.aux.par_aux
+from lib.stor.match_ids import match_larva_ids
 from lib.aux import naming as nam
 
 
@@ -104,34 +105,23 @@ def build_Jovanic(dataset, build_conf, source_dir, max_Nagents=None, min_duratio
         print('Loaded temporary data successfully!')
     except:
 
-        t_file = f'{pref}_t.txt'
-        id_file = f'{pref}_larvaid.txt'
-        x_file = f'{pref}_x_spine.txt'
-        y_file = f'{pref}_y_spine.txt'
-        state_file = f'{pref}_global_state_large_state.txt'
 
-        x_contour_file = f'{pref}_x_contour.txt'
-        y_contour_file = f'{pref}_y_contour.txt'
+        xs = pd.read_csv(f'{pref}_x_spine.txt', header=None, sep='\t', names=x_pars)
+        ys = pd.read_csv(f'{pref}_y_spine.txt', header=None, sep='\t', names=y_pars)
+        ts = pd.read_csv(f'{pref}_t.txt', header=None, sep='\t', names=['Step'])
 
-
-
-
-        xs = pd.read_csv(x_file, header=None, sep='\t', names=x_pars)
-        ys = pd.read_csv(y_file, header=None, sep='\t', names=y_pars)
-        ts = pd.read_csv(t_file, header=None, sep='\t', names=['Step'])
-
-        xcs = pd.read_csv(x_contour_file, header=None, sep='\t')
-        ycs = pd.read_csv(y_contour_file, header=None, sep='\t')
-        xcs,ycs=fun.convex_hull(xs=xcs.values,ys=ycs.values, N=d.Ncontour)
+        xcs = pd.read_csv(f'{pref}_x_contour.txt', header=None, sep='\t')
+        ycs = pd.read_csv(f'{pref}_y_contour.txt', header=None, sep='\t')
+        xcs,ycs= lib.anal.process.aux.convex_hull(xs=xcs.values, ys=ycs.values, N=d.Ncontour)
         xcs=pd.DataFrame(xcs, columns=xc_pars, index=None)
         ycs=pd.DataFrame(ycs, columns=yc_pars, index=None)
 
         try:
-            states = pd.read_csv(state_file, header=None, sep='\t', names=['state'])
+            states = pd.read_csv(f'{pref}_global_state_large_state.txt', header=None, sep='\t', names=['state'])
         except:
             states = None
 
-        ids = pd.read_csv(id_file, header=None, sep='\t', names=['AgentID'])
+        ids = pd.read_csv(f'{pref}_larvaid.txt', header=None, sep='\t', names=['AgentID'])
         ids['AgentID'] = [f'Larva_{10000 + i[0]}' for i in ids.values]
 
         min_t, max_t = float(ts.min()), float(ts.max())
@@ -143,42 +133,42 @@ def build_Jovanic(dataset, build_conf, source_dir, max_Nagents=None, min_duratio
 
         temp = pd.concat(par_list, axis=1, sort=False)
         temp.set_index(keys=['AgentID'], inplace=True, drop=True)
+        temp['spinelength'] = np.nan
         agent_ids = np.sort(temp.index.unique())
 
         durs = []
         starts = []
         stops = []
+        ls = []
         for id in agent_ids:
-            data = temp.xs(id)
+            data = temp.loc[id]
+            # data = temp.xs(id)
             t = data['Step'].values
-            start_t = int((t[0] - min_t) * fr)
-            stop_t = start_t + len(t)
-            t = np.arange(start_t, stop_t)
+            t0 = int((t[0] - min_t) * fr)
+            t1 = t0 + len(t)
+            t = np.arange(t0, t1)
             temp.loc[id, 'Step'] = t
             durs.append(len(t))
-            starts.append(start_t)
-            stops.append(stop_t)
-        temp.reset_index(drop=False, inplace=True)
-        temp.set_index(keys=['Step', 'AgentID'], inplace=True, drop=True)
+            starts.append(t0)
+            stops.append(t1)
 
-        temp['spinelength'] = np.nan
-        temp.reset_index(level='Step', drop=False, inplace=True)
-        temp_ids = temp.index.unique().tolist()
-        ls = []
-        for id in temp_ids:
-            ag_temp = temp.loc[id]
-            xy = ag_temp[nam.xy(d.points, flat=True)].values
-            spinelength = np.zeros(len(ag_temp)) * np.nan
+
+
+        # for id in agent_ids:
+        #     ag_temp = temp.loc[id]
+            xy = data[nam.xy(d.points, flat=True)].values
+            spinelength = np.zeros(len(data)) * np.nan
             for j in range(xy.shape[0]):
-                k = np.sum(np.diff(np.array(fun.group_list_by_n(xy[j, :], 2)), axis=0) ** 2, axis=1).T
-                if not np.isnan(np.sum(k)):
-                    sp_l = np.sum([np.sqrt(kk) for kk in k])
+                k = lib.aux.par_aux.sum(np.diff(np.array(lib.aux.dictsNlists.group_list_by_n(xy[j, :], 2)), axis=0) ** 2, axis=1).T
+                if not np.isnan(lib.aux.par_aux.sum(k)):
+                    sp_l = lib.aux.par_aux.sum([np.sqrt(kk) for kk in k])
                 else:
                     sp_l = np.nan
                 spinelength[j] = sp_l
             temp['spinelength'].loc[id] = spinelength
             ls.append(np.nanmean(spinelength))
-        e = pd.DataFrame({'length': ls}, index=temp_ids)
+        temp['Step'] = temp['Step'].values.astype(int)
+        e = pd.DataFrame({'length': ls}, index=agent_ids)
         temp.reset_index(drop=False, inplace=True)
         temp.set_index(keys=['Step', 'AgentID'], inplace=True, drop=True)
         temp_save(temp, e)
@@ -189,34 +179,33 @@ def build_Jovanic(dataset, build_conf, source_dir, max_Nagents=None, min_duratio
     new_ids = [f'Larva_{100 + i}' for i in range(len(old_ids))]
     new_pairs = dict(zip(old_ids, new_ids))
     temp.rename(index=new_pairs, inplace=True)
+
+    end = temp['head_x'].groupby('AgentID').count().to_frame()
+    end.columns = ['num_ticks']
+    end['cum_dur'] = end['num_ticks'] / fr
+
     temp.reset_index(drop=False, inplace=True)
     max_step = int(temp['Step'].max())
     temp.set_index(keys=['Step', 'AgentID'], inplace=True, drop=True)
     temp.sort_index(level=['Step', 'AgentID'], inplace=True)
     temp.drop_duplicates(inplace=True)
-
     trange = np.arange(max_step).astype(int)
     my_index = pd.MultiIndex.from_product([trange, new_ids], names=['Step', 'AgentID'])
     columns = x_pars + y_pars + xc_pars + yc_pars
     if 'state' in temp.columns:
         columns.append('state')
+    step = pd.DataFrame(temp, index=my_index, columns=columns)
+    # step.update(temp)
 
-    step = pd.DataFrame(index=my_index, columns=columns)
-    step.update(temp)
-    end = temp['head_x'].dropna().groupby('AgentID').count().to_frame()
-    end.columns = ['num_ticks']
-    end['cum_dur'] = end['num_ticks'] / fr
-
+    # print(end)
     if max_Nagents is not None:
-        selected = end.nlargest(max_Nagents, columns='num_ticks').index.values
+        selected = end.nlargest(max_Nagents, 'num_ticks').index.values
         step = step.loc[(slice(None), selected), :]
         end = end.loc[selected]
-
     if min_duration_in_sec > 0:
         selected = end[end['cum_dur'] >= min_duration_in_sec].index.values
         step = step.loc[(slice(None), selected), :]
         end = end.loc[selected]
-
     return step, end
 
 def build_Berni(dataset, build_conf, source_files, max_Nagents=None, min_duration_in_sec=0.0,

@@ -2,8 +2,10 @@ from copy import deepcopy
 
 import numpy as np
 
-from lib.aux import functions as fun
+import lib.aux.ang_aux
+import lib.aux.dictsNlists
 from lib.model.agents._larva import Larva
+from lib.model.body.body import draw_body_midline, draw_body_head, draw_body_centroid, draw_selected_body
 from lib.model.body.controller import BodyReplay
 
 
@@ -26,8 +28,8 @@ class LarvaReplay(Larva, BodyReplay):
             self.cen_pos=(np.nan, np.nan)
 
         self.Nsegs = m.draw_Nsegs
-        self.mid_ar = data[fun.flatten_list(m.mid_pars)].values.reshape([N, m.Npoints, 2])
-        self.con_ar = data[fun.flatten_list(m.con_pars)].values.reshape([N, m.Ncontour, 2])
+        self.mid_ar = data[lib.aux.dictsNlists.flatten_list(m.mid_pars)].values.reshape([N, m.Npoints, 2])
+        self.con_ar = data[lib.aux.dictsNlists.flatten_list(m.con_pars)].values.reshape([N, m.Ncontour, 2])
 
 
 
@@ -89,8 +91,9 @@ class LarvaReplay(Larva, BodyReplay):
                 x, y = self.pos
                 h_or = self.front_orientation
                 b_or = self.front_orientation - self.bend
-                p_head = np.array(fun.rotate_around_point(origin=[x, y], point=[l1 + x, y], radians=-h_or))
-                p_tail = np.array(fun.rotate_around_point(origin=[x, y], point=[l2 + x, y], radians=np.pi - b_or))
+                p_head = np.array(lib.aux.ang_aux.rotate_around_point(origin=[x, y], point=[l1 + x, y], radians=-h_or))
+                p_tail = np.array(
+                    lib.aux.ang_aux.rotate_around_point(origin=[x, y], point=[l2 + x, y], radians=np.pi - b_or))
                 pos1 = [np.nanmean([p_head[j], [x, y][j]]) for j in [0, 1]]
                 pos2 = [np.nanmean([p_tail[j], [x, y][j]]) for j in [0, 1]]
                 segs[0].set_position(pos1)
@@ -103,39 +106,32 @@ class LarvaReplay(Larva, BodyReplay):
 
     def draw(self, viewer):
         r,c,m, v=self.radius,self.color,self.model, self.vertices
+
+        pos=self.cen_pos if not np.isnan(self.cen_pos).any() else self.pos
+        mid=self.midline
+
         if m.draw_contour:
             if self.Nsegs is not None:
                 for seg in self.segs:
-                    seg.set_color(c)
                     seg.draw(viewer)
             elif len(v) > 0:
                 viewer.draw_polygon(v, color=c)
 
         if m.draw_centroid:
-            if not np.isnan(self.cen_pos).any():
-                viewer.draw_circle(radius=r / 2, position=self.cen_pos, color=c,width=r / 3)
-            elif not np.isnan(self.pos).any():
-                viewer.draw_circle(radius=r / 2, position=self.pos, color=c,width=r / 3)
-        if m.draw_midline and m.Npoints > 1:
-            try:
-                viewer.draw_polyline(self.midline, color=(0, 0, 255), closed=False, width=.15)
-                for i, seg_pos in enumerate(self.midline):
-                    cc = 255 * i / (len(self.midline) - 1)
-                    color = (cc, 255 - cc, 0)
-                    viewer.draw_circle(radius=.1, position=seg_pos, color=color)
-            except :
-                pass
+            draw_body_centroid(viewer, pos, r, c)
+
+        if m.draw_midline :
+            draw_body_midline(viewer, mid, r)
+
         if m.draw_head:
-            try:
-                viewer.draw_circle(self.midline[0], r / 2, color=(255, 0, 0), width= r / 6)
-            except :
-                pass
+            draw_body_head(viewer, mid, r)
+
         if self.selected:
-            if len(v) > 0 and not np.isnan(v).any():
-                viewer.draw_polygon(v, filled=False, color=m.selection_color, width=r / 5)
-            elif not np.isnan(self.pos).any():
-                viewer.draw_circle(radius=r, position=self.pos,
-                                   filled=False, color=m.selection_color, width=r / 3)
+            draw_selected_body(viewer, pos, v, r, m.selection_color)
+            # if len(v) > 0 and not np.isnan(v).any():
+            #     viewer.draw_polygon(v, filled=False, color=m.selection_color, width=r / 5)
+            # elif not np.isnan(pos).any():
+            #     viewer.draw_circle(pos, radius=r, filled=False, color=m.selection_color, width=r / 3)
 
     def set_color(self, color):
         self.color = color

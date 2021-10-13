@@ -4,7 +4,7 @@ from scipy.spatial.distance import euclidean
 from shapely import affinity
 from shapely.geometry import Point, Polygon
 
-from lib.aux import functions as fun
+import lib.aux.sim_aux
 from lib.model.DEB.deb import Substrate
 from lib.model.agents._agent import LarvaworldAgent
 
@@ -13,9 +13,9 @@ class Source(LarvaworldAgent):
     def __init__(self, shape_vertices=None, shape='circle', **kwargs):
         super().__init__(**kwargs)
         self.shape_vertices = shape_vertices
-        shape = fun.circle_to_polygon(60, self.radius)
+        shape = lib.aux.sim_aux.circle_to_polygon(60, self.radius)
 
-        if self.model.physics_engine:
+        if self.model.Box2D:
             self._body: Box2D.b2Body = self.model.space.CreateStaticBody(position=self.pos)
             self.Box2D_shape = b2ChainShape(vertices=shape.tolist())
             self._body.CreateFixture(shape=self.Box2D_shape)
@@ -83,13 +83,14 @@ class Food(Source):
         # viewer.draw_polygon(self.get_shape().boundary.coords, c, filled, r/5)
         viewer.draw_circle(p, r, c, filled, r / 5)
 
-        if self.odor_intensity > 0:
-            # viewer.draw_polygon(self.get_shape(1.5).boundary.coords, c, False, r / 10)
-            # viewer.draw_polygon(self.get_shape(2.0).boundary.coords, c, False, r / 15)
-            # viewer.draw_polygon(self.get_shape(3.0).boundary.coords, c, False, r / 20)
-            viewer.draw_circle(p, r * 1.5, c, False, r / 10)
-            viewer.draw_circle(p, r * 2.0, c, False, r / 15)
-            viewer.draw_circle(p, r * 3.0, c, False, r / 20)
+        if self.odor_id is not None :
+            if self.odor_intensity > 0:
+                # viewer.draw_polygon(self.get_shape(1.5).boundary.coords, c, False, r / 10)
+                # viewer.draw_polygon(self.get_shape(2.0).boundary.coords, c, False, r / 15)
+                # viewer.draw_polygon(self.get_shape(3.0).boundary.coords, c, False, r / 20)
+                viewer.draw_circle(p, r * 1.5, c, False, r / 10)
+                viewer.draw_circle(p, r * 2.0, c, False, r / 15)
+                viewer.draw_circle(p, r * 3.0, c, False, r / 20)
         if self.selected:
             # viewer.draw_polygon(self.get_shape(1.1).boundary.coords, self.model.selection_color, False, r / 5)
             viewer.draw_circle(p, r * 1.1, self.model.selection_color, False, r / 5)

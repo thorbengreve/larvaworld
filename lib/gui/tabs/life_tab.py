@@ -1,8 +1,7 @@
 import PySimpleGUI as sg
 
-import lib.conf.conf
 from lib.anal.plotting import plot_debs
-from lib.conf.init_dtypes import substrate_dict
+from lib.conf.base.dtypes import substrate_dict
 from lib.gui.aux.elements import CollapsibleDict, Table, GraphList, SelectionList, Header
 from lib.gui.aux.functions import col_size, t_kws, gui_col, gui_row
 from lib.gui.aux.buttons import GraphButton
@@ -27,7 +26,6 @@ class LifeTab(GuiTab):
             'enable_events': True,
             'orientation': 'h'
         }
-
         deb_modes = ['mass', 'length',
                      'reserve',
 
@@ -38,11 +36,8 @@ class LifeTab(GuiTab):
                      # 'explore2exploit_balance',
                      #     'f_filt'
                      ]
-
         sg.theme('LightGreen')
-
         ep = self.ep
-
         y = 0.5
         x1 = 0.2
         x2 = 0.8
@@ -50,7 +45,7 @@ class LifeTab(GuiTab):
 
         sl0 = SelectionList(tab=self, buttons=['load', 'save', 'delete'])
 
-        sub = CollapsibleDict('substrate', default=True, header_dict=substrate_dict, header_value='standard')
+        sub = CollapsibleDict('substrate', header_dict=substrate_dict, header_value='standard')
         l1 = [[sg.T('Epoch start (hours) : ', **t_kws(24))],
               [sg.Slider(range=(0, 150), default_value=0, k=self.S0,
                          tick_interval=24, resolution=1, trough_color='green', **sl1_kws)],
@@ -81,9 +76,7 @@ class LifeTab(GuiTab):
             gui_row([l_tab, l1, l2], y_frac=1 - y, x_fracs=[1 - x2, x2 / 2, x2 / 2]),
         ]
 
-        c = {sub.name: sub}
-        g = {g1.name: g1}
-        return l, c, g, {}
+        return l, {sub.name: sub}, {g1.name: g1}, {}
 
     def update(self, w, c, conf, id=None):
         c['substrate'].update_header(w, conf['substrate_type'])

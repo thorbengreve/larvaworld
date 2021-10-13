@@ -6,7 +6,8 @@ from PySimpleGUI import Button, BUTTON_TYPE_COLOR_CHOOSER
 
 from lib.gui.aux import graphics
 from lib.gui.aux.functions import b6_kws, t_kws
-from lib.stor import paths as paths
+from lib.conf.base import paths
+
 
 sg.theme('LightGreen')
 b_kws = {
@@ -21,6 +22,7 @@ def button_row(name, buttons, button_args={}):
         'enrich': 'Enrich the dataset.',
         'add_ref': 'Add a reference experimental dataset to the list.',
         'select_all': 'Select all list elements.',
+        'add': 'Add an item to the list.',
         'remove': 'Remove an item from the list.',
         'change_ID': 'Change the dataset ID transiently or permanently.',
         'browse': 'Browse to add items to the list.\n Either directly select a directory or a parent folder containing multiple subdirectories.',
@@ -36,11 +38,12 @@ def button_row(name, buttons, button_args={}):
         'draw_fig': 'Draw the selected graph.',
         'conf_fig': "Configure the selected graph's arguments.",
         'stop': "Stop the selected simulation.",
+        'imitate': "Imitate the selected dataset in a simulation.",
     }
     but_kws={
-        'browse' : {'initial_folder' : paths.DataFolder, 'enable_events' : True,
+        'browse' : {'initial_folder' : paths.path('DATA'), 'enable_events' : True,
                     'target': (0,-1), 'button_type' : sg.BUTTON_TYPE_BROWSE_FOLDER},
-        'browse_figs' : {'initial_folder' : paths.ExpFigFolder, 'enable_events' : True,
+        'browse_figs' : {'initial_folder' : paths.path('exp_figs'), 'enable_events' : True,
                          'target': (0,-1), 'button_type' : sg.BUTTON_TYPE_BROWSE_FILES, 'file_types':(("png Files", "*.png"),)},
     }
     bl = []
