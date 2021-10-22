@@ -12,6 +12,7 @@ import lib.aux.naming as nam
 from lib.conf.base.dtypes import null_dict
 
 
+
 class LarvaDataset:
     def __init__(self, dir, id='unnamed', fr=16, Npoints=None, Ncontour=0,
                  par_conf=None, load_data=True, env_params={}, larva_groups={}):
@@ -32,10 +33,12 @@ class LarvaDataset:
                 group_id = group_ids[0]
                 color = larva_groups[group_id]['default_color']
                 sample = larva_groups[group_id]['sample']
+                life_history = larva_groups[group_id]['life_history']
             else:
                 group_id = None
                 color = None
                 sample = samples[0] if len(samples) == 1 else None
+                life_history = None
 
             if Npoints is None:
                 try:
@@ -61,6 +64,7 @@ class LarvaDataset:
                            'env_params': env_params,
                            'larva_groups': larva_groups,
                            'sources': sources,
+                           'life_history': life_history
                            # **life_params
                            }
 
@@ -72,7 +76,6 @@ class LarvaDataset:
                 self.load()
             except:
                 print('Data not found. Load them manually.')
-
     def set_data(self, step=None, end=None, food=None):
         if step is not None:
             self.step_data = step
@@ -233,9 +236,12 @@ class LarvaDataset:
         print(f'Dataset {self.id} stored.')
 
     def save_dicts(self, env):
+        from lib.model.modules.nengobrain import NengoBrain
         for l in env.get_flies():
             if hasattr(l, 'deb') and l.deb is not None:
                 l.deb.finalize_dict(self.dir_dict['deb'])
+            elif isinstance(l.brain, NengoBrain) :
+                l.brain.save_dicts(self.dir_dict['nengo'])
             if l.brain.intermitter is not None:
                 l.brain.intermitter.save_dict(self.dir_dict['bout_dicts'])
 
@@ -328,6 +334,7 @@ class LarvaDataset:
         return df
 
     def load_aux(self, type, par=None):
+        # print(pd.HDFStore(self.dir_dict['aux_h5']).keys())
         df = self.read(key=f'{type}.{par}', file='aux_h5')
         return df
 
@@ -346,6 +353,13 @@ class LarvaDataset:
             ids = self.agent_ids
         files = [f'{id}.txt' for id in ids]
         ds = dNl.load_dicts(files=files, folder=self.dir_dict['deb'], **kwargs)
+        return ds
+
+    def load_dicts(self, type, ids=None, **kwargs):
+        if ids is None:
+            ids = self.agent_ids
+        files = [f'{id}.txt' for id in ids]
+        ds = dNl.load_dicts(files=files, folder=self.dir_dict[type], **kwargs)
         return ds
 
     def get_pars_list(self, p0, s0, draw_Nsegs):
@@ -402,7 +416,7 @@ class LarvaDataset:
 
     def visualize(self, s0=None, e0=None, vis_kwargs=None, agent_ids=None, save_to=None, time_range=None,
                   draw_Nsegs=None, env_params=None, track_point=None, dynamic_color=None, use_background=False,
-                  transposition=None, fix_point=None, secondary_fix_point=None, **kwargs):
+                  transposition=None, fix_point=None, fix_segment=None, **kwargs):
         from lib.model.envs._larvaworld_replay import LarvaWorldReplay
         if vis_kwargs is None:
             vis_kwargs = null_dict('visualization', mode='video')
@@ -432,7 +446,7 @@ class LarvaDataset:
             n1 = 'transposed'
         elif fix_point is not None:
             from lib.process.spatial import fixate_larva
-            s, bg = fixate_larva(s, point=fix_point, secondary_point=secondary_fix_point,
+            s, bg = fixate_larva(s, point=fix_point, fix_segment=fix_segment,
                                  arena_dims=arena_dims, config=self.config)
             n1 = 'fixed'
         else:
@@ -466,7 +480,7 @@ class LarvaDataset:
         replay_env.run()
         print('Visualization complete')
 
-    def visualize_single(self, id, close_view=True, fix_point=-1, secondary_fix_point=None, save_to=None,
+    def visualize_single(self, id, close_view=True, fix_point=-1, fix_segment=None, save_to=None,
                          draw_Nsegs=None, vis_kwargs=None, **kwargs):
         from lib.model.envs._larvaworld_replay import LarvaWorldReplay
         from lib.process.spatial import fixate_larva
@@ -481,7 +495,7 @@ class LarvaDataset:
         else:
             env_params = self.env_params
         dic, pars, track_point = self.get_pars_list(fix_point, s0, draw_Nsegs)
-        s, bg = fixate_larva(s0, point=fix_point, secondary_point=secondary_fix_point,
+        s, bg = fixate_larva(s0, point=fix_point, fix_segment=fix_segment,
                              arena_dims=env_params['arena']['arena_dims'], config=self.config)
         if save_to is None:
             save_to = self.vis_dir
@@ -617,6 +631,7 @@ class LarvaDataset:
             'vis': self.vis_dir,
             'comp_plot': os.path.join(self.plot_dir, 'comparative'),
             'deb': os.path.join(self.data_dir, 'deb_dicts'),
+            'nengo': os.path.join(self.data_dir, 'nengo_probes'),
             'single_tracks': os.path.join(self.data_dir, 'single_tracks'),
             'bout_dicts': os.path.join(self.data_dir, 'bout_dicts'),
             'tables_h5': os.path.join(self.data_dir, 'tables.h5'),
@@ -716,9 +731,10 @@ class LarvaDataset:
                 gConf = c['larva_groups'][gID]
                 valid_ids = [id for id in self.agent_ids if str.startswith(id, gID)]
                 copy_tree(self.dir, f)
-                d = LarvaDataset(f, id=gID, env_params=c['env_params'], larva_groups={gID: gConf}, load_data=False)
+                d = LarvaDataset(f, fr=self.fr, id=gID, env_params=c['env_params'], larva_groups={gID: gConf}, load_data=False)
                 d.set_data(step=s.loc[(slice(None), valid_ids), :], end=e.loc[valid_ids])
                 d.config['parent_plot_dir'] = self.plot_dir
+                # print(d.dt)
                 if is_last:
                     d.save()
                 ds.append(d)

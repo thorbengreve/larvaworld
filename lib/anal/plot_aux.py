@@ -1,9 +1,14 @@
+import itertools
 import os
 
+import pandas as pd
 import numpy as np
+import seaborn as sns
 from matplotlib import pyplot as plt, patches, transforms, ticker
 from matplotlib.pyplot import bar
+from scipy.stats import mannwhitneyu, ttest_ind
 
+from lib.anal.fitting import pvalue_star
 from lib.aux.dictsNlists import unique_list
 from lib.aux.colsNstr import N_colors
 from lib.conf.base.par import getPar
@@ -26,46 +31,199 @@ class Plot :
         self.filename = f'{name}.{suf}' if save_as is None else save_as
         ff = f'{name}_fits.csv' if save_fits_as is None else save_fits_as
         self.fit_filename=os.path.join(self.save_to, ff) if ff is not None else None
+        self.fit_ind = None
+        self.fit_df = None
         self.return_fig=return_fig
         self.show=show
         # self.fig=self.build(**kwargs)
 
     def build(self, Nrows=1, Ncols=1, figsize=None, **kwargs):
         if figsize is None :
-            figsize=(6*Ncols, 5*Nrows)
+            figsize=(12*Ncols, 10*Nrows)
         self.fig, axs = plt.subplots(Nrows, Ncols, figsize=figsize, **kwargs)
         self.axs = axs.ravel() if Nrows*Ncols > 1 else [axs]
 
 
-    def conf_ax(self, idx=0, xlab=None, ylab=None, xlim=None, ylim=None, xticks=None, xticklabels=None,
-                xMaxN=None, yMaxN=None, leg_loc=None, title=None):
+    def conf_ax(self, idx=0, xlab=None, ylab=None, xlim=None, ylim=None, xticks=None, xticklabels=None,yticks=None, yticklabels=None,
+                xMaxN=None, yMaxN=None,xMath=None,tickMath=None,ytickMath=None, leg_loc=None,leg_handles=None, title=None):
+        ax=self.axs[idx]
         if ylab is not None:
-            self.axs[idx].set_ylabel(ylab)
+            ax.set_ylabel(ylab)
         if xlab is not None:
-            self.axs[idx].set_xlabel(xlab)
+            ax.set_xlabel(xlab)
         if xlim is not None:
-            self.axs[idx].set_xlim(xlim)
+            ax.set_xlim(xlim)
         if ylim is not None:
-            self.axs[idx].set_ylim(ylim)
+            ax.set_ylim(ylim)
 
         if xticks is not None:
-            self.axs[idx].set_xticks(ticks=xticks)
+            ax.set_xticks(ticks=xticks)
         if xticklabels is not None:
-            self.axs[idx].set_xticklabels(labels=xticklabels)
+            ax.set_xticklabels(labels=xticklabels)
+        if yticks is not None:
+            ax.set_yticks(ticks=yticks)
+        if yticklabels is not None:
+            ax.set_yticklabels(labels=yticklabels)
+        if tickMath is not None:
+            ax.ticklabel_format(useMathText=True, scilimits=tickMath)
+        if ytickMath is not None:
+            ax.ticklabel_format(axis='y',useMathText=True, scilimits=ytickMath, useOffset=True)
         if xMaxN is not None:
-            self.axs[idx].xaxis.set_major_locator(ticker.MaxNLocator(xMaxN))
+            ax.xaxis.set_major_locator(ticker.MaxNLocator(xMaxN))
         if yMaxN is not None:
-            self.axs[idx].yaxis.set_major_locator(ticker.MaxNLocator(yMaxN))
+            ax.yaxis.set_major_locator(ticker.MaxNLocator(yMaxN))
+        if xMath is not None:
+            ax.xaxis.set_major_formatter(ticker.ScalarFormatter(useOffset=True, useMathText=True))
         if title is not None:
-            self.axs[idx].set_title(title)
+            ax.set_title(title)
         if leg_loc is not None:
-            self.axs[idx].legend(loc=leg_loc)
+            if leg_handles is not None :
+                ax.legend(handles=leg_handles,loc=leg_loc)
+            else :
+                ax.legend(loc=leg_loc)
 
     def set(self, fig):
         self.fig=fig
 
     def get(self):
+        if self.fit_df is not None:
+            self.fit_df.to_csv(self.fit_filename, index=True, header=True)
         return process_plot(self.fig, self.save_to, self.filename, self.return_fig, self.show)
+
+    def init_fits(self, pars, names=('dataset1', 'dataset2'), multiindex=True):
+        if self.Ndatasets > 1:
+            if multiindex :
+                fit_ind = np.array([np.array([l1, l2]) for l1, l2 in itertools.combinations(self.labels, 2)])
+                self.fit_ind = pd.MultiIndex.from_arrays([fit_ind[:, 0], fit_ind[:, 1]], names=names)
+                self.fit_df = pd.DataFrame(index=self.fit_ind, columns=pars + [f'S_{p}' for p in pars] + [f'P_{p}' for p in pars])
+            else :
+                self.fit_df = pd.DataFrame(index=self.labels,columns=pars + [f'S_{p}' for p in pars] + [f'P_{p}' for p in pars])
+
+    def comp_pvalues(self,values, p):
+        if self.fit_ind is not None:
+            for ind, (v1, v2) in zip(self.fit_ind, itertools.combinations(values, 2)):
+                self.comp_pvalue(ind, v1, v2, p)
+
+    def comp_pvalue(self, ind, v1, v2, p):
+        st, pv = ttest_ind(v1, v2, equal_var=False)
+        if not pv <= 0.01:
+            self.fit_df[p].loc[ind] = 0
+        else:
+            self.fit_df[p].loc[ind] = 1 if np.nanmean(v1) < np.nanmean(v2) else -1
+        self.fit_df[f'S_{p}'].loc[ind] = st
+        self.fit_df[f'P_{p}'].loc[ind] = np.round(pv, 11)
+
+    def plot_half_circles(self,p,i):
+        if self.fit_df is not None:
+            ax=self.axs[i]
+            ii = 0
+            for z, (l1, l2) in enumerate(self.fit_df.index.values):
+                col1,col2=self.colors[self.labels.index(l1)], self.colors[self.labels.index(l2)]
+                res=self.plot_half_circle(p,ax,col1,col2,v=self.fit_df[p].iloc[z],ind=(l1, l2), coef=z - ii)
+                if not res :
+                    ii += 1
+                    continue
+
+    def plot_half_circle(self,p,ax,col1,col2,v,ind,coef=0):
+        res=True
+        if  v== 1:
+            c1, c2 = col1, col2
+        elif v == -1:
+            c1, c2 = col2, col1
+        else:
+            res = False
+
+        if res :
+            rad = 0.04
+            yy = 0.95 - coef * 0.08
+            xx = 0.75
+            dual_half_circle(center=(xx, yy), radius=rad, angle=90, ax=ax, colors=(c1, c2), transform=ax.transAxes)
+            pv = self.fit_df[f'P_{p}'].loc[ind]
+            if pv == 0:
+                pvi = -9
+            else:
+                for pvi in np.arange(-1, -10, -1):
+                    if np.log10(pv) > pvi:
+                        pvi += 1
+                        break
+            ax.text(xx + 0.05, yy + rad / 1.5, f'p<10$^{{{pvi}}}$', ha='left', va='top', color='k',
+                    fontsize=15, transform=ax.transAxes)
+        return res
+
+    def adjust(self, LR=None, BT=None, W=None, H=None):
+        kws={}
+        if LR is not None :
+            kws['left']=LR[0]
+            kws['right']=LR[1]
+        if BT is not None :
+            kws['bottom']=BT[0]
+            kws['top']=BT[1]
+        if W is not None :
+            kws['wspace']=W
+        if H is not None :
+            kws['hspace']=H
+        self.fig.subplots_adjust(**kws)
+
+    @ property
+    def Nticks(self):
+        Nticks_list = [len(d.step_data.index.unique('Step')) for d in self.datasets]
+        return np.max(unique_list(Nticks_list))
+
+    @property
+    def fr(self):
+        fr_list = [d.fr for d in self.datasets]
+        return np.max(unique_list(fr_list))
+
+    @property
+    def dt(self):
+        dt_list = unique_list([d.dt for d in self.datasets])
+        # print(dt_list)
+        return np.max(dt_list)
+
+    @property
+    def tlim(self):
+        return (0, int(self.Nticks * self.dt))
+        # return (0, int(self.Nticks / self.fr))
+
+    def trange(self, unit='min'):
+        if unit=='min':
+            T=60
+        elif unit=='sec':
+            T=1
+        t0, t1 = self.tlim
+        x = np.linspace(t0/T, t1/T, self.Nticks)
+        # print(t1, self.fr, self.dt, T, t1/T, self.Nticks)
+        # raise
+        return x
+
+
+    def angrange(self, r,  absolute=False,nbins=200):
+        lim =(r0, r1) = (0, r) if absolute else (-r, r)
+        x = np.linspace(r0, r1, nbins)
+        return x, lim
+
+    def plot_par(self, par, bins, i=0,labels=None, absolute=False,nbins=None, type='plt.hist',
+                 pvalues=False, half_circles=False, **kwargs):
+        if labels is None :
+            labels=self.labels
+        vs=[]
+        for d in self.datasets:
+            v = d.get_par(par).dropna().values
+            if absolute:
+                v = np.abs(v)
+            vs.append(v)
+        if bins=='broad' and nbins is not None:
+            bins = np.linspace(np.min([np.min(v) for v in vs]), np.max([np.max(v) for v in vs]), nbins)
+        for v, c, l in zip(vs, self.colors, labels):
+            if type=='sns.hist' :
+                sns.histplot(v, color=c, bins=bins, ax=self.axs[i], label=l,**kwargs)
+            elif type=='plt.hist':
+                self.axs[i].hist(v, bins=bins, weights=np.ones_like(v) / float(len(v)), label=l, color=c, **kwargs)
+        if pvalues :
+            self.comp_pvalues(vs, par)
+        if half_circles :
+            self.plot_half_circles(par, i)
+        return vs
 
 # class TurnPlot(Plot) :
 #     def __init__(self, absolute=True,**kwargs):
@@ -336,11 +494,13 @@ def process_plot(fig, save_to, filename, return_fig, show=False):
         plt.show()
     fig.patch.set_visible(False)
     if return_fig:
-        return fig, save_to, filename
+        res= fig, save_to, filename
     else:
         filepath = os.path.join(save_to, filename)
         save_plot(fig, filepath, filename)
-        return fig
+        res= fig
+
+    return res
 
 
 def label_diff(i, j, text, X, Y, ax):
@@ -361,3 +521,22 @@ def boolean_indexing(v, fillval=np.nan):
     out = np.full(mask.shape, fillval)
     out[mask] = np.concatenate(v)
     return out
+
+def annotate_plot(data, x,y,hue,**kwargs):
+    from statannotations.Annotator import Annotator
+    h1, h2 = np.unique(data[hue].values)
+    subIDs0 = np.unique(data[x].values)
+    pairs = [((subID, h1), (subID, h2)) for subID in subIDs0]
+    pvs = []
+    for subID in subIDs0:
+        dd = data[data[x] == subID]
+        dd0 = dd[dd[hue] == h1][y].values
+        dd1 = dd[dd[hue] == h2][y].values
+        pvs.append(mannwhitneyu(dd0, dd1, alternative="two-sided").pvalue)
+    f_pvs = [pvalue_star(pv) for pv in pvs]
+    # f_pvs = [f'p={pv:.2e}' for pv in pvs]
+
+    # Add annotations
+    annotator = Annotator(pairs=pairs,data=data, x=x,y=y,hue=hue, **kwargs)
+    annotator.verbose = False
+    annotator.annotate_custom_annotations(f_pvs)

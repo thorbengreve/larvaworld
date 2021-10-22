@@ -47,18 +47,12 @@ class Source(LarvaworldAgent):
 
 class Food(Source):
     def __init__(self, amount=1.0, quality=1.0,default_color=None,type='standard', **kwargs):
-        # print(kwargs)
         if default_color is None :
             default_color = 'green'
         super().__init__(default_color=default_color,**kwargs)
         self.initial_amount = amount
-        self.quality = quality
         self.amount = self.initial_amount
-        self.type = type
-        self.substrate = Substrate(type=type)
-
-    # def get_mol(self, V, **kwargs):
-    #     return self.substrate.get_mol(V=V, quality=self.quality, **kwargs)
+        self.substrate = Substrate(type=type, quality=quality)
 
     def get_amount(self):
         return self.amount
@@ -82,15 +76,16 @@ class Food(Source):
         p, c, r = self.get_position(), self.color, self.radius
         # viewer.draw_polygon(self.get_shape().boundary.coords, c, filled, r/5)
         viewer.draw_circle(p, r, c, filled, r / 5)
+        # viewer.draw_circle((p[0]-r, p[1]), r/20, 'red', filled, r / 15)
+        # viewer.draw_circle((p[0]+r, p[1]), r/20, 'red', filled, r / 15)
+        # print(r)
 
         if self.odor_id is not None :
             if self.odor_intensity > 0:
-                # viewer.draw_polygon(self.get_shape(1.5).boundary.coords, c, False, r / 10)
-                # viewer.draw_polygon(self.get_shape(2.0).boundary.coords, c, False, r / 15)
-                # viewer.draw_polygon(self.get_shape(3.0).boundary.coords, c, False, r / 20)
-                viewer.draw_circle(p, r * 1.5, c, False, r / 10)
-                viewer.draw_circle(p, r * 2.0, c, False, r / 15)
-                viewer.draw_circle(p, r * 3.0, c, False, r / 20)
+                if self.model.draw_odor_aura :
+                    viewer.draw_circle(p, r * 1.5, c, False, r / 10)
+                    viewer.draw_circle(p, r * 2.0, c, False, r / 15)
+                    viewer.draw_circle(p, r * 3.0, c, False, r / 20)
         if self.selected:
             # viewer.draw_polygon(self.get_shape(1.1).boundary.coords, self.model.selection_color, False, r / 5)
             viewer.draw_circle(p, r * 1.1, self.model.selection_color, False, r / 5)

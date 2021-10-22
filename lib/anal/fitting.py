@@ -89,7 +89,7 @@ def get_powerlaw_alpha(dur, dur0, dur1, discrete=False):
 
 
 def get_lognormal(dur):
-    d=np.log(dur)
+    d = np.log(dur)
     return np.mean(d), np.std(d)
 
 
@@ -136,7 +136,7 @@ def logNpow_switch(x, xmax, u2, du2, c2cum, c2, discrete=False, fit_by='cdf'):
                 temp[i, j] = MSE(c2, lp_pdf)
 
     if all(np.isnan(temp.flatten())):
-        return np.nan
+        return np.nan, np.nan
     else:
         ii, jj = np.unravel_index(np.nanargmin(temp), temp.shape)
         return xmids[ii], overlaps[jj]
@@ -172,12 +172,13 @@ def fit_bouts(config, dataset=None, s=None, e=None, id=None, store=False, bouts=
         'feeder_reoccurence_rate': None,
     }
     config['EEB_poly1d'] = get_EEB_poly1d(**config['intermitter']).c.tolist()
+    # config['EEB_poly1d'] = {config['dt']: get_EEB_poly1d(**config['intermitter']).c.tolist()}
 
     return dic
 
 
 def fit_bout_distros(x0, xmin, xmax, discrete=False, xmid=np.nan, overlap=0.0, Nbins=64, print_fits=True,
-                     dataset_id='dataset', bout='pause', combine=True, store=False, fit_by='cdf'):
+                     dataset_id='dataset', bout='pause', combine=True, store=False, fit_by='pdf'):
     with suppress_stdout(True):
         warnings.filterwarnings('ignore')
         x = x0[x0 >= xmin]
@@ -355,6 +356,15 @@ def get_best_distro(bout, f, idx_Kmax=None):
     return distro
 
 
+def pvalue_star(pv):
+    a = {1e-4: "****", 1e-3: "***",
+         1e-2: "**", 0.05: "*", 1: "ns"}
+    for k, v in a.items():
+        if pv < k:
+            return v
+    return "ns"
+
+
 class BoutGenerator:
     def __init__(self, name, range, dt, **kwargs):
         self.name = name
@@ -384,6 +394,9 @@ class BoutGenerator:
         x0, x1 = int(self.xmin / self.dt), int(self.xmax / self.dt)
         xx = np.arange(x0, x1 + 1)
         pmf = self.ddfs[self.name]['pdf'](xx * self.dt, **kwargs)
+        mask = ~np.isnan(pmf)
+        pmf = pmf[mask]
+        xx = xx[mask]
         pmf /= pmf.sum()
         return rv_discrete(values=(xx, pmf))
 

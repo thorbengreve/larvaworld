@@ -1,7 +1,6 @@
 import itertools
 import os
 import random
-
 import numpy as np
 import pandas as pd
 from pypet import ObjectTable
@@ -11,8 +10,8 @@ from lib.aux.dictsNlists import reconstruct_dict
 import lib.aux.sim_aux
 from lib.anal.plotting import plot_2d, plot_3pars, plot_endpoint_scatter, plot_endpoint_params, plot_debs, \
     plot_heatmap_PI
-from lib.sim.batch.aux import grid_search_dict, load_traj
-from lib.sim.single.single_run import run_sim, SingleRun
+from lib.sim.batch.aux import grid_search_dict, load_traj, retrieve_exp_conf
+from lib.sim.single.single_run import SingleRun
 from lib.stor.larva_dataset import LarvaDataset
 
 
@@ -93,7 +92,6 @@ def save_results_df(traj):
 
 
 def exp_fit_processing(traj, d, exp_fitter):
-    from lib.anal.comparing import ExpFitter
     p = traj.config.fit_par
     fit = exp_fitter.compare(d)
     traj.f_add_result(p, fit, comment='The fit')
@@ -108,23 +106,14 @@ def default_processing(traj, d=None):
     elif p in s.columns:
         vals = s[p].groupby('AgentID').mean()
     else:
-        # d.process(types='source',source=(0.04,0), show_output=True)
-        # s, e = d.step_data, d.endpoint_data
-        # vals = e[p].values
-        # # try :
-        # from lib.conf.par import post_get_par
-        # vals=post_get_par(d,p)
-        # except :
         raise ValueError('Could not retrieve fit parameter from dataset')
 
-    ops_mean = traj.config.operations.mean
-    ops_std = traj.config.operations.std
-    ops_abs = traj.config.operations.abs
-    if ops_abs:
+    ops = traj.config.operations
+    if ops.abs:
         vals = np.abs(vals)
-    if ops_mean:
+    if ops.mean:
         fit = np.mean(vals)
-    elif ops_std:
+    elif ops.std:
         fit = np.std(vals)
     traj.f_add_result(p, fit, comment='The fit')
     return d, fit
@@ -155,30 +144,29 @@ def null_post_processing(traj, result_tuple):
 
 
 def plot_results(traj, df):
-    fig_dict = {}
-    filepath = traj.config.dir_path
+    figs = {}
     p_ns = [traj.f_get(p).v_name for p in traj.f_get_explored_parameters()]
     r_ns = np.unique([traj.f_get(r).v_name for r in traj.f_get_results()])
-    kwargs = {'df': df,
-              'save_to': filepath,
-              'show': False}
+    kws = {'df': df,
+           'save_to': traj.config.dir_path,
+           'show': False}
     for r_n in r_ns:
         if len(p_ns) == 1:
-            fig = plot_2d(labels=p_ns + [r_n], pref=r_n, **kwargs)
-            fig_dict[f'{p_ns[0]}VS{r_n}'] = fig
+            figs[f'{p_ns[0]}VS{r_n}'] = plot_2d(labels=p_ns + [r_n], pref=r_n, **kws)
         elif len(p_ns) == 2:
-            dic = plot_3pars(labels=p_ns + [r_n], pref=r_n, **kwargs)
-            fig_dict.update(dic)
+            figs.update(plot_3pars(labels=p_ns + [r_n], pref=r_n, **kws))
         elif len(p_ns) > 2:
             for i, pair in enumerate(itertools.combinations(p_ns, 2)):
-                dic = plot_3pars(labels=list(pair) + [r_n], pref=f'{i}_{r_n}', **kwargs)
-                fig_dict.update(dic)
-    return fig_dict
+                figs.update(plot_3pars(labels=list(pair) + [r_n], pref=f'{i}_{r_n}', **kws))
+    return figs
 
 
 def null_final_processing(traj):
     df = save_results_df(traj)
-    plots = plot_results(traj, df)
+    try :
+        plots = plot_results(traj, df)
+    except :
+        pass
     return df, plots
 
 
@@ -240,12 +228,12 @@ def post_processing(traj, result_tuple):
     Nruns = len(runs)
     fits = [traj.res.runs.f_get(run).f_get(fit_par).f_get() for run in runs]
     if minimize:
-        best = min(fits)
-        best_idx = np.argmin(fits)
+        best = np.nanmin(fits)
+        best_idx = np.nanargmin(fits)
         thr_reached = best <= thr
     else:
-        best = max(fits)
-        best_idx = np.argmax(fits)
+        best = np.nanmax(fits)
+        best_idx = np.nanargmax(fits)
         thr_reached = best >= thr
     best_run = runs[best_idx]
     print(f'Best result out of {Nruns} runs : {best} in run {best_run}')
@@ -275,24 +263,17 @@ def post_processing(traj, result_tuple):
 
 def single_run(traj, procfunc=None, save_hdf5=True, exp_kws={}, proc_kws={}):
     with suppress_stdout(True):
-        ds = SingleRun(
-        # ds = run_sim(
-            env_params=reconstruct_dict(traj.f_get('env_params')),
-            sim_params=reconstruct_dict(traj.f_get('sim_params'),
-                                        sim_ID=f'run_{traj.v_idx}', path=traj.config.dataset_path,
-                                        save_data=False),
-            life_params=reconstruct_dict(traj.f_get('life_params')),
-            larva_groups=reconstruct_dict(traj.f_get('larva_groups')),
-            **exp_kws).run()
+        ds = SingleRun(**retrieve_exp_conf(traj), **exp_kws).run()
 
         if procfunc is None:
             results = np.nan
         else:
-            if len(ds)==1:
-                d=ds[0]
+            if len(ds) == 1:
+                d = ds[0]
                 d, results = procfunc(traj, d, **proc_kws)
-            else :
-                raise ValueError (f'Splitting resulting dataset yielded {len(ds)} datasets but the batch-run is configured for a single one.')
+            else:
+                raise ValueError(
+                    f'Splitting resulting dataset yielded {len(ds)} datasets but the batch-run is configured for a single one.')
 
     if save_hdf5:
         s, e = [ObjectTable(data=k, index=k.index, columns=k.columns.values, copy=True) for k in
@@ -303,7 +284,7 @@ def single_run(traj, procfunc=None, save_hdf5=True, exp_kws={}, proc_kws={}):
 
 
 def PI_computation(traj, dataset):
-    ind = dataset.comp_PI()
+    ind = dataset.config['PI']['PI']
     traj.f_add_result('PI', ind, comment=f'The preference index')
     return dataset, ind
 

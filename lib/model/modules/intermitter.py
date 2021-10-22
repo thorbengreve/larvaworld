@@ -1,6 +1,8 @@
 import os
 
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 import lib.aux.dictsNlists
 from lib.anal.fitting import BoutGenerator
@@ -11,8 +13,7 @@ from lib.model.modules.basic import Effector
 
 
 class Intermitter(Effector):
-    def __init__(self, brain=None, crawler=None, crawl_bouts=False,
-                 feeder=None, feed_bouts=False,
+    def __init__(self, brain=None, crawl_bouts=False, feed_bouts=False,
                  pause_dist=None, stridechain_dist=None, crawl_freq=10 / 7, feed_freq=2.0,
                  EEB_decay=1, save_to=None,
                  EEB=0.5, feeder_reoccurence_rate=None, feeder_reocurrence_as_EEB=True,
@@ -21,8 +22,9 @@ class Intermitter(Effector):
         self.brain = brain
         self.save_to = save_to
 
-        self.crawler = crawler
-        self.feeder = feeder
+        self.crawler = brain.crawler if brain is not None else None
+        self.feeder = brain.feeder if brain is not None else None
+        self.turner = brain.turner if brain is not None else None
         self.EEB = EEB
         self.base_EEB = EEB
         self.crawl_freq = crawl_freq
@@ -67,8 +69,6 @@ class Intermitter(Effector):
         self.feedchain_length = None
 
     def reset(self):
-        # print('ddd')
-        # Initialize internal variables
         self.initialize()
         self.t = 0
         self.total_t = 0
@@ -105,6 +105,7 @@ class Intermitter(Effector):
         super().count_time()
         # super().count_ticks()
         self.update_state()
+        # print(self.t, self.active_bouts)
         # print(self.brain.agent.unique_id, self.EEB, self.feeder_reoccurence_rate)
         # print(self.current_stridechain_length, self.current_feedchain_length, self.current_pause_duration)
 
@@ -253,12 +254,12 @@ class Intermitter(Effector):
             self.EEB *= self.EEB_exp_coef
         else:
             self.EEB = self.base_EEB
-        if feed_success == True:
+        if feed_success == 1:
             if self.feeder_reocurrence_as_EEB:
                 self.feeder_reoccurence_rate = self.EEB
             else:
                 self.feeder_reoccurence_rate = max_refeed_rate
-        elif feed_success == False:
+        elif feed_success == -1:
             self.feeder_reoccurence_rate *= refeed_rate_coef
 
     @property
@@ -273,52 +274,50 @@ class Intermitter(Effector):
     def active_bouts(self):
         return self.current_stridechain_length, self.current_feedchain_length, self.current_pause_ticks
 
+    def interrupt_locomotion(self):
+        if self.current_pause_duration is None:
+            if self.current_feedchain_length is not None:
+                self.register_feedchain()
+            elif self.current_stridechain_length is not None:
+                self.register_stridechain()
+            self.inhibit_locomotion()
+
+    def trigger_locomotion(self):
+        if self.current_pause_duration is not None:
+            self.register_pause()
+            self.disinhibit_locomotion()
 
 class OfflineIntermitter(Intermitter):
-    def __init__(self, **kwargs):
-        # print(OrderedDict(sorted(kwargs.items())))
+    def __init__(self,register_bouts=True, **kwargs):
         super().__init__(**kwargs)
+        self.register_bouts = register_bouts
 
     def step(self):
         super().count_ticks()
         t = self.ticks
-
-        dur = t * self.dt
         self.stride_stop = False
-        if self.current_stridechain_length is not None and t >= self.current_crawl_ticks:
+        if self.current_stridechain_length and t >= self.current_crawl_ticks:
             self.current_numstrides += 1
             self.stride_counter += 1
-            self.stride_stop=True
+            self.stride_stop = True
             if self.current_numstrides >= self.current_stridechain_length:
-                self.stridechain_counter += 1
-                self.cum_stridechain_dur += dur
-                self.stridechain_lengths.append(self.current_stridechain_length)
-                self.reset_ticks()
+                self.register('stride')
                 self.current_numstrides = 0
                 self.current_stridechain_length = None
                 self.current_pause_ticks = int(self.pause_dist.sample() / self.dt)
                 self.inhibit_locomotion()
-                # self.current_pause_ticks = np.round(self.pause_dist.sample()/self.dt).astype(int)
-        elif self.current_feedchain_length is not None and t >= self.current_feed_ticks:
+        elif self.current_feedchain_length and t >= self.current_feed_ticks:
             self.feed_counter += 1
             if np.random.uniform(0, 1, 1) >= self.feeder_reoccurence_rate:
-                self.feedchain_counter += 1
-                self.cum_feedchain_dur += dur
-                self.feedchain_lengths.append(self.current_feedchain_length)
-                self.reset_ticks()
+                self.register('feed')
                 self.current_feedchain_length = None
                 self.current_pause_ticks = int(self.pause_dist.sample() / self.dt)
                 self.inhibit_locomotion()
-                # self.current_pause_ticks = np.round(self.pause_dist.sample()/self.dt).astype(int)
             else:
                 self.current_feedchain_length += 1
-        elif self.current_pause_ticks is not None and t > self.current_pause_ticks:
-            self.pause_counter += 1
-
-            self.pause_durs.append(dur)
-            self.cum_pause_dur += dur
+        elif self.current_pause_ticks and t > self.current_pause_ticks:
+            self.register('pause')
             self.current_pause_ticks = None
-            self.reset_ticks()
             self.disinhibit_locomotion()
 
     def disinhibit_locomotion(self):
@@ -333,25 +332,53 @@ class OfflineIntermitter(Intermitter):
         pass
 
 
+
+
+    def register(self, bout):
+        if self.register_bouts :
+            t = self.ticks
+            dur = t * self.dt
+            if bout=='feed' :
+                self.feedchain_counter += 1
+                self.cum_feedchain_dur += dur
+                self.feedchain_lengths.append(self.current_feedchain_length)
+
+            elif bout=='stride' :
+                self.stridechain_counter += 1
+                self.cum_stridechain_dur += dur
+                self.stridechain_lengths.append(self.current_stridechain_length)
+
+            elif bout=='pause' :
+                self.pause_counter += 1
+                self.cum_pause_dur += dur
+                self.pause_durs.append(dur)
+
+        self.reset_ticks()
+
+
+
 class NengoIntermitter(OfflineIntermitter):
-    def __init__(self, nengo_manager, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.nengo_manager = nengo_manager
+        # self.nengo_manager = nengo_manager
         self.current_stridechain_length = self.stridechain_dist.sample()
 
     def disinhibit_locomotion(self):
         if np.random.uniform(0, 1, 1) >= self.EEB:
             self.crawler.set_freq(self.crawler.default_freq)
-            self.feeder.set_freq(0)
+            if self.feeder is not None :
+                self.feeder.set_freq(0)
             self.current_stridechain_length = self.stridechain_dist.sample()
         else:
-            self.feeder.set_freq(self.feeder.default_freq)
+            if self.feeder is not None:
+                self.feeder.set_freq(self.feeder.default_freq)
             self.crawler.set_freq(0)
             self.current_feedchain_length = 1
 
     def inhibit_locomotion(self):
         self.crawler.set_freq(0)
-        self.feeder.set_freq(0)
+        if self.feeder is not None:
+            self.feeder.set_freq(0)
 
     # def update_state(self):
     #     if not self.effector:
@@ -452,44 +479,79 @@ def get_EEB_poly1d(sample=None, dt=None, **kwargs):
     if sample is not None:
         if type(sample) == str:
             sample = loadConf(sample, 'Ref')
-        kws=sample['intermitter']
-
+        kws = sample['intermitter']
     else:
         kws = kwargs
     if dt is not None:
         kws['dt'] = dt
 
-    EEBs = np.arange(0, 1, 0.05)
+    EEBs = np.arange(0, 1.05, 0.05)
     ms = []
     for EEB in EEBs:
-        inter = OfflineIntermitter(EEB=EEB, **kws)
+        inter = OfflineIntermitter(EEB=EEB,register_bouts=False, **kws)
         max_ticks = int(60 * 60 / inter.dt)
         while inter.total_ticks < max_ticks:
             inter.step()
         ms.append(inter.get_mean_feed_freq())
-    ms = np.array(ms)
-    z = np.poly1d(np.polyfit(ms, EEBs, 5))
+    z = np.poly1d(np.polyfit(np.array(ms), EEBs, 5))
     return z
 
 
-def get_best_EEB(deb, sample, dt=None, **kwargs):
-    if type(sample)==str:
-        sample = loadConf(sample, 'Ref')
-    z = np.poly1d(sample['EEB_poly1d']) if dt in [None, sample['dt']] else get_EEB_poly1d(sample, dt,
-                                                                                              **kwargs)
-    # else:
-    #     z = get_EEB_poly1d(sample_dataset, dt, **kwargs)
-
+def get_best_EEB(deb, sample):
+    z = np.poly1d(sample['EEB_poly1d'])
     if type(deb) == dict:
         s = deb['feed_freq_estimate']
     else:
         s = deb.fr_feed
-
     return np.clip(z(s), a_min=0, a_max=1)
 
+def get_EEB_time_fractions(sample=None, dt=None,**kwargs):
+    if sample is not None:
+        if type(sample) == str:
+            sample = loadConf(sample, 'Ref')
+        kws = sample['intermitter']
+    else:
+        kws = kwargs
+    if dt is not None:
+        kws['dt'] = dt
+
+    rts= {f'{q} ratio' : nam.dur_ratio(p) for p,q in zip(['stridechain', 'pause','feedchain'], ['crawl', 'pause','feed'])}
+    EEBs = np.round(np.arange(0, 1, 0.02),2)
+    data=[]
+    for EEB in EEBs:
+        inter = OfflineIntermitter(EEB=EEB, **kws)
+        max_ticks = int(1*60 * 60 / inter.dt)
+        while inter.total_ticks < max_ticks:
+            inter.step()
+        dic=inter.build_dict()
+        ffr=inter.get_mean_feed_freq()
+        entry = {'EEB': EEB,  **{k : np.round(dic[v],2) for k,v in rts.items()}, nam.mean(nam.freq('feed')) : ffr}
+        data.append(entry)
+    df=pd.DataFrame.from_records(data=data)
+    return df
 
 
 if __name__ == "__main__":
+    from lib.stor.larva_dataset import LarvaDataset
+    sample = 'None.200_controls'
+    sample = loadConf(sample, 'Ref')
+    d=LarvaDataset(sample['dir'])
+    d.config['EEB_poly1d'] = get_EEB_poly1d(**d.config['intermitter']).c.tolist()
+    d.save_config()
+
+    raise
+    ffrs=np.arange(0,2,0.1)
+    fig,ax=plt.subplots(1,1)
+    sample='None.200_controls'
+    for dt in [0.1, 0.08,0.12, 0.0625]:
+        z=get_EEB_poly1d(sample,dt)
+        plt.plot(ffrs,z(ffrs), label=dt)
+        # dt=0.1
+        # df=get_EEB_time_fractions(sample, dt)
+        # print(dt, )
+        # print(nam.mean(nam.freq('feed')))
+    plt.show()
+    raise
     inter = FittedIntermitter(sample_dataset='reference', dt=0.001, EEB=0.8, EEB_decay=1.0)
     # print(inter.EEB_decay)
     sample = loadConf('reference', 'Ref')

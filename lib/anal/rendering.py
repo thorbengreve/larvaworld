@@ -1,7 +1,6 @@
 import math
 import os
 import time
-
 import numpy as np
 import pygame
 from scipy.spatial import ConvexHull
@@ -9,7 +8,7 @@ from scipy.spatial import ConvexHull
 import lib.process.aux
 
 
-class GuppiesViewer(object):
+class Viewer(object):
     def __init__(self, width, height, caption="", fps=10, dt=0.1, show_display=True, record_video_to=None,
                  record_image_to=None, zoom=1):
         x = 1550
@@ -46,22 +45,14 @@ class GuppiesViewer(object):
         self._scale = np.array([[1., .0], [.0, -1.]])
         self._translation = np.zeros(2)
 
-    def draw_arena(self, tank_shape, tank_color, screen_color):
-        # t0=time.time()
+    def draw_arena(self, vertices, tank_color, screen_color):
         surf1 = pygame.Surface(self.display_size, pygame.SRCALPHA)
         surf2 = pygame.Surface(self.display_size, pygame.SRCALPHA)
-        tank_shape = [self._transform(v) for v in tank_shape]
-        pygame.draw.polygon(surf1, tank_color, tank_shape, 0)
-
-        # screen_shape = [self._transform(v) for v in screen_shape]
-        # pygame.draw.polygon(surf2, screen_color, screen_shape, 0)
+        vertices = [self._transform(v) for v in vertices]
+        pygame.draw.polygon(surf1, tank_color, vertices, 0)
         pygame.draw.rect(surf2, screen_color, surf2.get_rect())
-        # surf1.blit(surf2, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
         surf2.blit(surf1, (0, 0), special_flags=pygame.BLEND_RGBA_SUB)
         self._window.blit(surf2, (0, 0))
-        # t1 = time.time()
-        # print()
-        # print(np.round((t1-t0)*1000))
 
     def init_screen(self):
         if self.show_display:
@@ -75,22 +66,18 @@ class GuppiesViewer(object):
         return window
 
     def scale_dims(self):
-        _width = int(self.window_size[0] / self.zoom)
-        _height = int(self.window_size[1] / self.zoom)
-        return _width, _height
+        w,h =(np.array(self.window_size)/self.zoom).astype(int)
+        return w,h
 
     def zoom_screen(self, d_zoom, pos=None):
         if pos is None:
-            pos = self.get_mouse_position()
+            pos = self.mouse_position
         if 0.001 <= self.zoom + d_zoom <= 1:
             self.zoom = np.round(self.zoom + d_zoom, 2)
             self.display_size = self.scale_dims()
             self.center = np.clip(self.center - pos * d_zoom, self.center_lim, -self.center_lim)
         if self.zoom == 1.0:
             self.center = np.array([0.0, 0.0])
-
-    def __del__(self):
-        self.close()
 
     def set_bounds(self, left, right, bottom, top):
         assert right > left and top > bottom
@@ -151,6 +138,7 @@ class GuppiesViewer(object):
     def draw_text_box(self, text_font, text_position):
         self._window.blit(text_font, text_position)
 
+
     def draw_arrow(self, start, end, color=(0, 0, 0), width=.01):
         size = 4
         start = self._transform(start)
@@ -168,9 +156,10 @@ class GuppiesViewer(object):
         image_data = pygame.surfarray.array3d(self._window)
         return image_data
 
-    def get_mouse_position(self):
-        mouse_pos = np.array(pygame.mouse.get_pos()) - self._translation
-        return np.linalg.inv(self._scale).dot(mouse_pos)
+    @ property
+    def mouse_position(self):
+        p = np.array(pygame.mouse.get_pos()) - self._translation
+        return np.linalg.inv(self._scale).dot(p)
 
     def render(self):
         if self.show_display:
@@ -208,6 +197,7 @@ class GuppiesViewer(object):
         self.center = np.clip(pos, self.center_lim, -self.center_lim)
 
 
+
 class ScreenItem:
     def __init__(self, color=None):
         if color is None:
@@ -220,13 +210,12 @@ class ScreenItem:
 
 
 class InputBox(ScreenItem):
-    def __init__(self, visible=False, text='', color_inactive=None, color_active=None,
-                 screen_pos=None, linewidth=0.01, show_frame=False, agent=None, end_time=0, start_time=0):
+    def __init__(self, visible=False, text='', color_inactive=None, color_active=None,center=False, w=140, h=32,
+                 screen_pos=None, linewidth=0.01, show_frame=False, agent=None, end_time=0, start_time=0, font=None):
         super().__init__(color=color_active)
         self.screen_pos = screen_pos
         self.linewidth = linewidth
         self.show_frame = show_frame
-        # self.set_shape(self.screen_pos)
         if color_active is None:
             color_active = pygame.Color('dodgerblue2')
         self.color_active = color_active
@@ -235,13 +224,21 @@ class InputBox(ScreenItem):
         self.color_inactive = color_inactive
         self.visible = visible
         self.active = False
-        self.font = pygame.font.Font(None, 32)
+        if font is None :
+            font = pygame.font.Font(None, 32)
+        self.font = font
         self.text = text
         self.text_font = None
         self.agent = agent
         self.end_time = end_time
         self.start_time = start_time
-        self.shape = None
+        self.center = center
+        self.w = w
+        self.h = h
+        if self.screen_pos is not None :
+            self.set_shape(self.screen_pos)
+        else :
+            self.shape = None
 
     def draw(self, viewer):
         if self.visible:
@@ -250,14 +247,14 @@ class InputBox(ScreenItem):
                 self.color = self.agent.default_color
             if self.shape is not None:
                 # Render the current text.
-                txt_surface = self.font.render(self.text, True, self.color)
+                lines = self.text.splitlines()
+                txt_surfaces = [self.font.render(l, True, self.color) for l in lines]
                 # Blit the text.
-                viewer.draw_text_box(txt_surface, (self.shape.x + 5, self.shape.y + 5))
-                # viewer._window.blit(txt_surface, (self.shape.x + 5, self.shape.y + 5))
+                for i,s in enumerate(txt_surfaces) :
+                    viewer.draw_text_box(s, (self.shape.x + 5, self.shape.y + 5+i*100))
                 if self.show_frame:
                     # Blit the input_box rect.
                     viewer.draw_polygon(self.shape, color=self.color, filled=False, width=self.linewidth)
-                    # pygame.draw.rect(viewer._window, self.color, self.shape, self.linewidth)
             elif self.text_font is not None:
                 self.text_font = self.font_large.render(self.text, 1, self.color)
                 viewer.draw_text_box(self.text_font, self.text_font_r)
@@ -292,7 +289,10 @@ class InputBox(ScreenItem):
 
     def set_shape(self, pos):
         if pos is not None and not any(np.isnan(pos)):
-            self.shape = pygame.Rect(pos[0], pos[1], 140, 32)
+            if self.center :
+                self.shape = pygame.Rect(pos[0]-self.w/2, pos[1]-self.h/2, self.w, self.h)
+            else :
+                self.shape = pygame.Rect(pos[0], pos[1], self.w, self.h)
         else:
             self.shape = None
 
@@ -310,6 +310,11 @@ class InputBox(ScreenItem):
         self.text_font_r = self.text_font.get_rect()
         self.text_font_r.center = (x_pos * 0.91, y_pos)
 
+    def flash_text(self, text, t=2):
+        self.text = text
+        self.end_time = pygame.time.get_ticks() + t*1000
+        self.start_time = pygame.time.get_ticks() + int(0.1 * 1000)
+
 
 class SimulationClock(ScreenItem):
 
@@ -322,16 +327,16 @@ class SimulationClock(ScreenItem):
         self.second = 0
         self.minute = 0
         self.hour = 0
-        self.counter = 0
+        # self.counter = 0
 
-        self.timer_on = False
-        self.next_on = None
-        self.next_off = None
-        self.timer_opened = False
-        self.timer_closed = False
+        # self.timer_on = False
+        # self.next_on = None
+        # self.next_off = None
+        # self.timer_opened = False
+        # self.timer_closed = False
 
     def tick_clock(self):
-        self.counter += 1
+        # self.counter += 1
         self.dmsecond += self.sim_step_in_dms
         if self.dmsecond >= 100:
             self.second += 1
@@ -342,7 +347,6 @@ class SimulationClock(ScreenItem):
                 if self.minute >= 60:
                     self.hour += 1
                     self.minute -= 60
-        self.check_timer()
 
     def render_clock(self, width, height):
         # Scale to screen
@@ -389,33 +393,33 @@ class SimulationClock(ScreenItem):
         viewer.draw_text_box(self.second_font, self.second_font_r)
         viewer.draw_text_box(self.dmsecond_font, self.msecond_font_r)
 
-    def set_timer(self, on_ticks, off_ticks):
-        self.Ndurs = len(on_ticks)
-        self.timer_on_ticks, self.timer_off_ticks = on_ticks, off_ticks
-        self.dur_idx = 0
-        self.next_on, self.next_off = self.timer_on_ticks[self.dur_idx], self.timer_off_ticks[self.dur_idx]
-        self.timer_on = False
-
-    def check_timer(self):
-        self.timer_opened = False
-        self.timer_closed = False
-        if not self.timer_on and self.next_on is not None:
-            if self.counter >= self.next_on:
-                self.timer_on = True
-                self.timer_opened = True
-                self.dur_idx += 1
-                if self.dur_idx < self.Ndurs:
-                    self.next_on = self.timer_on_ticks[self.dur_idx]
-                else:
-                    self.next_on = None
-        elif self.timer_on and self.next_off is not None:
-            if self.counter >= self.next_off:
-                self.timer_on = False
-                self.timer_closed = True
-                if self.dur_idx < self.Ndurs:
-                    self.next_off = self.timer_off_ticks[self.dur_idx]
-                else:
-                    self.next_on = None
+    # def set_timer(self, on_ticks, off_ticks):
+    #     self.Ndurs = len(on_ticks)
+    #     self.timer_on_ticks, self.timer_off_ticks = on_ticks, off_ticks
+    #     self.dur_idx = 0
+    #     self.next_on, self.next_off = self.timer_on_ticks[self.dur_idx], self.timer_off_ticks[self.dur_idx]
+    #     self.timer_on = False
+    #
+    # def check_timer(self):
+    #     self.timer_opened = False
+    #     self.timer_closed = False
+    #     if not self.timer_on and self.next_on is not None:
+    #         if self.counter >= self.next_on:
+    #             self.timer_on = True
+    #             self.timer_opened = True
+    #             self.dur_idx += 1
+    #             if self.dur_idx < self.Ndurs:
+    #                 self.next_on = self.timer_on_ticks[self.dur_idx]
+    #             else:
+    #                 self.next_on = None
+    #     elif self.timer_on and self.next_off is not None:
+    #         if self.counter >= self.next_off:
+    #             self.timer_on = False
+    #             self.timer_closed = True
+    #             if self.dur_idx < self.Ndurs:
+    #                 self.next_off = self.timer_off_ticks[self.dur_idx]
+    #             else:
+    #                 self.next_on = None
 
 
 class SimulationScale(ScreenItem):
@@ -511,7 +515,7 @@ def draw_trajectories(space_dims, agents, screen, decay_in_ticks=None, traj_colo
         # This is the case for larva trajectories derived from experiments where some values are np.nan
         else:
             traj_x = np.array([x for x, y in traj])
-            ds, de = lib.anal.process.aux.parse_array_at_nans(traj_x)
+            ds, de = lib.process.aux.parse_array_at_nans(traj_x)
             parsed_traj = [traj[s:e] for s, e in zip(ds, de)]
             parsed_traj_col = [traj_col[s:e] for s, e in zip(ds, de)]
 
@@ -527,3 +531,22 @@ def draw_trajectories(space_dims, agents, screen, decay_in_ticks=None, traj_colo
                     c = [tuple(float(x) for x in s.strip('()').split(',')) for s in c]
                     c = [s if not np.isnan(s).any() else (255, 0, 0) for s in c]
                     screen.draw_polyline(t, color=c, closed=False, width=0.01 * space_dims[0], dynamic_color=True)
+
+def blit_text(surface, text, pos, font=None, color=pygame.Color('white')):
+    if font is None :
+        font=pygame.font.SysFont('Arial', 20)
+    words = [word.split(' ') for word in text.splitlines()]  # 2D array where each row is a list of words.
+    space = font.size(' ')[0]  # The width of a space.
+    max_width, max_height = surface.get_size()
+    x, y = pos
+    for line in words:
+        for word in line:
+            word_surface = font.render(word, 0, color)
+            word_width, word_height = word_surface.get_size()
+            if x + word_width >= max_width:
+                x = pos[0]  # Reset the x.
+                y += word_height  # Start on new row.
+            surface.blit(word_surface, (x, y))
+            x += word_width + space
+        x = pos[0]  # Reset the x.
+        y += word_height  # Start on new row.

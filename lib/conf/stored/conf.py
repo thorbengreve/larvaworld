@@ -5,6 +5,7 @@ import shutil
 from lib.conf.base.dtypes import null_dict, base_enrich
 from lib.conf.base import paths
 
+
 def loadConf(id, conf_type):
     try:
         conf_dict = loadConfDict(conf_type)
@@ -23,7 +24,7 @@ def expandConf(id, conf_type):
         elif conf_type == 'Exp':
             conf['experiment'] = id
             conf['env_params'] = expandConf(conf['env_params'], 'Env')
-            conf['life_params'] = loadConf(conf['life_params'], 'Life')
+            conf['trials'] = loadConf(conf['trials'], 'Trial')
             for k, v in conf['larva_groups'].items():
                 if type(v['model']) == str:
                     v['model'] = loadConf(v['model'], 'Model')
@@ -118,19 +119,22 @@ def store_reference_data_confs():
          in ['2', '240']] for c in ['Fed', 'Deprived', 'Starved']]
     dds = flatten_list(dds)
     dds.append(f'{DATA}/SchleyerGroup/processed/FRUvsQUI/Naive->PUR/EM/exploration')
+    dds.append(f'{DATA}/SchleyerGroup/processed/no_odor/200_controls')
+    dds.append(f'{DATA}/SchleyerGroup/processed/no_odor/10_controls')
     for dr in dds:
         d = LarvaDataset(dr, load_data=False)
-        # # c = d.config
-        # del d.config['agent_ids']
-        # d.config['bout_distros']['stride']=d.config['bout_distros']['stride']['best']
-        # d.config['bout_distros']['pause']=d.config['bout_distros']['pause']['best']
         d.save_config(add_reference=True)
 
 
 def store_confs(keys=None):
     if keys is None:
-        keys = ['Ref', 'Data', 'Model', 'Env', 'Exp']
-
+        keys = ['Ref', 'Data', 'Model', 'Env', 'Exp', 'Life']
+    if 'Life' in keys:
+        from lib.conf.stored.trial_conf import trial_dict, life_dict
+        for k, v in trial_dict.items():
+            saveConf(v, 'Trial', k)
+        for k, v in life_dict.items():
+            saveConf(v, 'Life', k)
     if 'Data' in keys:
         from lib.conf.stored.data_conf import importformats, import_par_confs
         for k, v in import_par_confs.items():
@@ -167,46 +171,48 @@ def store_confs(keys=None):
         for k, v in bat.batch_dict.items():
             saveConf(v, 'Batch', k)
 
-def imitation_exp(config, model='explorer', idx=0, **kwargs):
 
-    if type(config) == str:
-        config = loadConf(config, 'Ref')
-    id = config['id']
+def imitation_exp(sample, model='explorer', idx=0, N=None,duration=None, **kwargs):
+    sample_conf = loadConf(sample, 'Ref')
+    id = sample_conf['id']
     base_larva = expandConf(model, 'Model')
-    sim_params = null_dict('sim_params',timestep=1 / config['fr'], duration=config['duration'] / 60,
-                           path = 'single_runs/imitation', sim_ID = f'{id}_imitation_{idx}')
-    env_params = null_dict('env_conf', arena=config['env_params']['arena'], larva_groups={
-        'ImitationGroup': null_dict('LarvaGroup', sample=config, model=base_larva, default_color='blue', imitation=True,
-                                    distribution=None)})
+    if duration is None :
+        duration = sample_conf['duration'] / 60
+    sim_params = null_dict('sim_params', timestep=1 / sample_conf['fr'], duration=duration,
+                           path='single_runs/imitation', sim_ID=f'{id}_imitation_{idx}')
+    env_params = null_dict('env_conf', arena=sample_conf['env_params']['arena'])
+    larva_groups = {
+        'ImitationGroup': null_dict('LarvaGroup', sample=sample, model=base_larva, default_color='blue', imitation=True,
+                                    distribution={'N': N})}
 
-    exp_conf = null_dict('exp_conf', sim_params=sim_params, env_params=env_params, life_params=null_dict('life'),
-                         enrichment=base_enrich())
+    exp_conf = null_dict('exp_conf', sim_params=sim_params, env_params=env_params, larva_groups=larva_groups,
+                         trials={}, enrichment=base_enrich())
     exp_conf['experiment'] = 'imitation'
     exp_conf.update(**kwargs)
     return exp_conf
 
 
-def get_exp_conf(exp_type, sim_params, life_params=None, N=None, larva_model=None):
-    conf = copy.deepcopy(expandConf(exp_type, 'Exp'))
-    for k in list(conf['env_params']['larva_groups'].keys()):
-        if N is not None:
-            conf['env_params']['larva_groups'][k]['N'] = N
-        if larva_model is not None:
-            conf['env_params']['larva_groups'][k]['model'] = loadConf(larva_model, 'Model')
-    if life_params is not None:
-        conf['life_params'] = life_params
-
-    if sim_params['sim_ID'] is None:
-        idx = next_idx(exp_type)
-        sim_params['sim_ID'] = f'{exp_type}_{idx}'
-    if sim_params['path'] is None:
-        sim_params['path'] = f'single_runs/{exp_type}'
-    if sim_params['duration'] is None:
-        sim_params['duration'] = conf['sim_params']['duration']
-    conf['sim_params'] = sim_params
-    conf['experiment'] = exp_type
-
-    return conf
+# def get_exp_conf(exp_type, sim_params, life_params=None, N=None, larva_model=None):
+#     conf = copy.deepcopy(expandConf(exp_type, 'Exp'))
+#     for k in list(conf['env_params']['larva_groups'].keys()):
+#         if N is not None:
+#             conf['env_params']['larva_groups'][k]['N'] = N
+#         if larva_model is not None:
+#             conf['env_params']['larva_groups'][k]['model'] = loadConf(larva_model, 'Model')
+#     if life_params is not None:
+#         conf['life_params'] = life_params
+#
+#     if sim_params['sim_ID'] is None:
+#         idx = next_idx(exp_type)
+#         sim_params['sim_ID'] = f'{exp_type}_{idx}'
+#     if sim_params['path'] is None:
+#         sim_params['path'] = f'single_runs/{exp_type}'
+#     if sim_params['duration'] is None:
+#         sim_params['duration'] = conf['sim_params']['duration']
+#     conf['sim_params'] = sim_params
+#     conf['experiment'] = exp_type
+#
+#     return conf
 
 if __name__ == '__main__':
     store_confs()

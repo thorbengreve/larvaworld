@@ -20,16 +20,18 @@ Tsin = null_dict('turner',
                  activation_noise=0.5,
                  )
 
-Tno_noise=null_dict('turner', activation_noise=0.0, noise=0.0)
+Tno_noise = null_dict('turner', activation_noise=0.0, noise=0.0)
 
 Ccon = null_dict('crawler', waveform='constant', initial_amp=0.0012)
 
 RL_olf_memory = null_dict('memory', Delta=0.1, state_spacePerSide=1, mode='olf',
                           gain_space=np.arange(-200.0, 200.0, 50.0).tolist())
 
-RL_touch_memory = null_dict('memory', Delta=0.5, state_spacePerSide=1, mode='touch',train_dur = 60,update_dt=0.5,
-                          gain_space=np.round(np.arange(-10, 11, 5), 1).tolist())
+RL_touch_memory = null_dict('memory', Delta=0.5, state_spacePerSide=1, mode='touch', train_dur=30, update_dt=0.5,
+                            gain_space=np.round(np.arange(-10, 11, 5), 1).tolist(), state_specific_best=True)
 
+gRL_touch_memory = null_dict('memory', Delta=0.5, state_spacePerSide=1, mode='touch', train_dur=30, update_dt=0.5,
+                            gain_space=np.round(np.arange(-10, 11, 5), 1).tolist(), state_specific_best=False)
 
 OD1 = {'Odor': {'mean': 150.0, 'std': 0.0}}
 OD2 = {'CS': {'mean': 150.0, 'std': 0.0}, 'UCS': {'mean': 0.0, 'std': 0.0}}
@@ -57,6 +59,7 @@ def brain(module_shorts, nengo=False, OD=None, **kwargs):
         'Im': 'intermitter',
         'O': 'olfactor',
         'To': 'toucher',
+        'W': 'windsensor',
         'F': 'feeder',
         'M': 'memory',
     }
@@ -66,6 +69,7 @@ def brain(module_shorts, nengo=False, OD=None, **kwargs):
     elif 'LOF' in module_shorts:
         module_shorts.remove('LOF')
         module_shorts += ['T', 'C', 'If', 'Im', 'O', 'F']
+    module_shorts.append('W')
     modules = [module_dict[k] for k in module_shorts]
 
     modules = null_dict('modules', **{m: True for m in modules})
@@ -88,26 +92,40 @@ def brain(module_shorts, nengo=False, OD=None, **kwargs):
     return d
 
 
-def RvsS_larva(EEB, Nsegs=2, mock=False, hunger_gain=2.0, DEB_dt=1.0, **deb_kws):
-    b = brain(['L', 'F'], crawler=Cbas, intermitter=Im(EEB)) if not mock else brain(['Im', 'F'],
-                                                                                    intermitter=Im(EEB))
+def RvsS_larva(EEB, Nsegs=2, mock=False, hunger_gain=1.0, DEB_dt=1.0, OD=None, **deb_kws):
+    if OD is None:
+        ms = ['L', 'F']
+    else:
+        ms = ['LOF']
+    b = brain(ms, OD=OD, crawler=Cbas, intermitter=Im(EEB)) if not mock else brain(['Im', 'F'],
+                                                                                   intermitter=Im(EEB))
     return null_dict('larva_conf', brain=b, body=null_dict('body', initial_length=0.001, Nsegs=Nsegs),
                      energetics=null_dict('energetics', hunger_as_EEB=True, hunger_gain=hunger_gain, DEB_dt=DEB_dt,
                                           **deb_kws))
 
 
-def nengo_brain(EEB):
+def nengo_brain(module_shorts, EEB, OD=None):
     if EEB > 0:
         f_fr0, f_fr_r = 2.0, (1.0, 3.0)
     else:
         f_fr0, f_fr_r = 0.0, (0.0, 0.0)
-    return brain(['L', 'F'],
-                 turner=null_dict('turner', initial_freq=0.3, initial_amp=10.0, noise=0.0, freq_range=(0.2, 0.4)),
+    # print(OD)
+    # if OD is None :
+    #     module_shorts =['L', 'F']
+    #     # olfactor = None
+    # else :
+    #     module_shorts =['LOF']
+        # olfactor = null_dict('olfactor')
+        # olfactor['odor_dict']=OD
+    return brain(module_shorts,
+                 turner=null_dict('turner', initial_freq=0.3, initial_amp=30.0, noise=1.85, activation_noise=0.8, freq_range=(0.2, 0.4)),
                  crawler=null_dict('crawler', initial_freq=1.5, initial_amp=0.6, freq_range=(1.2, 1.8),
                                    waveform=None, step_to_length_mu=0.25, step_to_length_std=0.01),
                  feeder=null_dict('feeder', initial_freq=f_fr0, freq_range=f_fr_r),
+                 # olfactor=olfactor,
                  intermitter=Im(EEB),
-                 nengo=True
+                 nengo=True,
+                 OD=OD
                  )
 
 
@@ -172,8 +190,10 @@ def mod(brain, bod={}, energetics=None, phys={}):
 larvae = {
     'explorer': mod(brain(['L'])),
     'toucher': mod(brain(['L', 'To'], turner=Tno_noise), bod={'touch_sensors': 0}),
-    'RL_toucher_0': mod(brain(['L', 'To', 'M'], turner=Tno_noise,memory=RL_touch_memory), bod={'touch_sensors': 0}),
-    'RL_toucher_2': mod(brain(['L', 'To', 'M'], turner=Tno_noise,memory=RL_touch_memory), bod={'touch_sensors': 2}),
+    'RL_toucher_0': mod(brain(['L', 'To', 'M'], turner=Tno_noise, memory=RL_touch_memory), bod={'touch_sensors': 0}),
+    'gRL_toucher_0': mod(brain(['L', 'To', 'M'], turner=Tno_noise, memory=gRL_touch_memory), bod={'touch_sensors': 0}),
+    'RL_toucher_2': mod(brain(['L', 'To', 'M'], turner=Tno_noise, memory=RL_touch_memory), bod={'touch_sensors': 2}),
+    'gRL_toucher_2': mod(brain(['L', 'To', 'M'], turner=Tno_noise, memory=gRL_touch_memory), bod={'touch_sensors': 2}),
     'Levy-walker': mod(Levy_brain),
     'navigator': mod(brain(['L', 'O'], OD=OD1)),
     'navigator_x2': mod(brain(['L', 'O'], OD=OD2)),
@@ -185,16 +205,19 @@ larvae = {
     'RL_forager': mod(brain(['LOF', 'M'], intermitter=Im(0.5))),
     'basic_navigator': mod(brain(['L', 'O'], OD=OD1, turner=Tsin, crawler=Ccon), bod={'Nsegs': 1}),
     'explorer_3con': mod(brain_3c, bod={'initial_length': 3.85 / 1000, 'length_std': 0.35 / 1000}),
-    'nengo_feeder': mod(nengo_brain(0.75)),
-    'nengo_explorer': mod(nengo_brain(0.0)),
+    'nengo_feeder': mod(nengo_brain(['L', 'F'],EEB=0.75)),
+    'nengo_explorer': mod(nengo_brain(['L'], EEB=0.0)),
+    'nengo_forager': mod(nengo_brain(['LOF'],EEB=0.75, OD=OD1)),
     'imitator': mod(brain(['L']), bod={'initial_length': 0.0045, 'length_std': 0.0001, 'Nsegs': 11},
                     phys={'ang_damping': 1.0, 'body_spring_k': 1.0}),
 }
 RvsS = {
-    'rover': RvsS_larva(EEB=0.37, absorption=0.5),
-    'mock_rover': RvsS_larva(EEB=0.37, absorption=0.5, Nsegs=1, mock=True),
-    'sitter': RvsS_larva(EEB=0.67, absorption=0.15),
-    'mock_sitter': RvsS_larva(EEB=0.67, absorption=0.15, Nsegs=1, mock=True),
+    'rover': RvsS_larva(EEB=0.37, absorption=0.5, species='rover'),
+    'navigator_rover': RvsS_larva(EEB=0.37, absorption=0.5, species='rover', OD=OD1),
+    'mock_rover': RvsS_larva(EEB=0.37, absorption=0.5, species='rover', Nsegs=1, mock=True),
+    'sitter': RvsS_larva(EEB=0.67, absorption=0.15, species='sitter'),
+    'navigator_sitter': RvsS_larva(EEB=0.67, absorption=0.15, species='sitter', OD=OD1),
+    'mock_sitter': RvsS_larva(EEB=0.67, absorption=0.15, species='sitter', Nsegs=1, mock=True),
 }
 
 
@@ -221,3 +244,4 @@ mod_dict = {
     **gamers,
 }
 
+print(mod_dict['nengo_forager']['brain']['olfactor_params'])

@@ -36,6 +36,7 @@ class Gut:
 
     def update(self, X_V=0):
         if X_V>0 :
+
             self.Nfeeds += 1
             self.V += X_V
             self.mol_ingested += self.deb.substrate.C * X_V
@@ -56,15 +57,11 @@ class Gut:
     def digest(self):
         dX0 = self.deb.J_X_Amm_dt * self.deb.V
         dX = np.min([dX0, self.gut_X])
-        # print(dX0*self.f/self.gut_X)
-        # print(1/self.deb.T_factor)
-        dV = dX / self.X
+        dV = dX / self.X if self.X!=0 else 0.0
         self.V -= dV
         self.gut_X -= dX
         self.gut_f += dX * self.deb.y_P_X
         self.mol_absorbed += dX
-        # print(np.mean(self.dict['gut_p_A_deviation'][-500:]))
-        # print(np.round(self.p_A/self.deb.deb_p_A,2))
         self.p_A = dX * self.deb.mu_E * self.deb.y_E_X
         # self.p_A = self.deb.J_X_Amm_dt * V * self.deb.mu_E * self.deb.y_E_X * self.f
 
@@ -229,7 +226,7 @@ class Gut:
         elif unit == 'mg':
             return m * 1000
 
-    def absorbed_mass(self, unit='g'):
+    def absorbed_mass(self, unit='mg'):
         m = self.mol_absorbed * self.deb.w_E
         if unit == 'g':
             return m
